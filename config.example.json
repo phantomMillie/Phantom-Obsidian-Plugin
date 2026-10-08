@@ -1,0 +1,33 @@
+{
+  "_설명": "config.json 으로 복사해 이 PC 의 vault 에 맞게 채운다. paths 는 vault 기준 상대 경로. 없는 키는 기본값(일반 PARA 이름)을 쓰고, 선택 키가 없으면 그 기능만 빠진다.",
+  "vault": "/path/to/your-vault",
+  "paths": {
+    "projects": "Projects",
+    "areas": "Areas",
+    "resources": "Resources",
+    "archives": "Archives",
+    "store": "Store",
+    "method_doc": "Resources/Methods/Phantom Flow.md",
+    "meetings": "Resources/Meetings",
+    "flow_output": "Resources/QA",
+    "qa_example": "Archives/Example/✅ Example QA.md",
+    "glossary": "Resources/Glossary",
+    "glossary_index": "Resources/Glossary/📖 Glossary.md",
+    "policy_index": "Resources/Policies/🗂️ Policy Index.md",
+    "devlog_inbox": "Resources/Devlog/📥 Log Inbox.md",
+    "issue_inbox": "Resources/Devlog/📥 Issue Inbox.md",
+    "keyword_rules": ".scripts/devlog_rules.json",
+    "spec_doc": "Projects/PARA Framework/📐 Spec.md",
+    "para_inbox": "📥 PARA 인박스.md",
+    "para_history": "📤 PARA 이동 히스토리.md"
+  },
+  "classify": {
+    "fallback_project": "Unsorted",
+    "resource_skip": []
+  },
+  "local": {
+    "anthropic_key": "~/.config/phantom-obsidian/anthropic-key",
+    "llm_cmd": "~/.config/phantom-obsidian/llm-cmd",
+    "slack_webhook": "~/.config/phantom-obsidian/slack-webhook"
+  }
+}

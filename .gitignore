@@ -1,0 +1,5 @@
+config.json
+PHANTOM.md
+state/
+.DS_Store
+__pycache__/
