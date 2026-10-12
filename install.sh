@@ -3,6 +3,7 @@
 # 여러 번 돌려도 같은 결과. config.json 을 바꾼 뒤에도 다시 돌린다.
 #
 #   ./install.sh            연결 / 갱신
+#   ./install.sh --init <폴더>   vault 를 새로 만들고(scripts/vault_init.py) 연결까지
 #   ./install.sh --remove   연결 해제 (이 레포 파일은 그대로)
 #
 # 하는 일
@@ -18,6 +19,11 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
 REMOVE=0; [ "${1:-}" = "--remove" ] && REMOVE=1
+
+if [ "${1:-}" = "--init" ]; then
+  [ -n "${2:-}" ] || { echo "사용: ./install.sh --init <만들 vault 폴더>" >&2; exit 1; }
+  python3 "$REPO/scripts/vault_init.py" "$2" --set-default
+fi
 
 # 관리 블록 쓰기/지우기: block <파일> <내용파일|""(지우기)>
 block() {
@@ -52,7 +58,7 @@ if [ "$REMOVE" = 1 ]; then
 fi
 
 # 1. 전역 지침 생성
-[ -f "$REPO/config.json" ] || { echo "config.json 없음 — cp config.example.json config.json 후 vault 경로 수정" >&2; exit 1; }
+[ -f "$REPO/config.json" ] || { echo "config.json 없음 — ./install.sh --init <새 vault 폴더> 로 vault 를 만들거나, cp config.example.json config.json 후 기존 vault 경로 수정" >&2; exit 1; }
 VAULT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["vault"])' "$REPO/config.json")"
 [ -d "$VAULT" ] || { echo "vault 폴더 없음: $VAULT" >&2; exit 1; }
 python3 - "$REPO/PHANTOM.template.md" "$REPO/PHANTOM.md" "$VAULT" <<'EOF'

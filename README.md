@@ -15,6 +15,10 @@ Phantom Obsidian vault 작업 방식(팬텀 플로우 · 정책 추출 · 용어
 ├── config.json                 vault 경로 — PC 설정 (gitignore)
 ├── PHANTOM.template.md         전역 지침 원본 → install.sh 가 PHANTOM.md 생성 (gitignore)
 ├── skills/<이름>/SKILL.md       방법 원본
+├── hooks/project_guard.py      프로젝트 필수 항목 리마인드 훅 (Claude Code)
+├── scripts/vault_init.py       새 vault 생성 · 관리 파일 갱신
+├── scripts/project_lint.py     프로젝트 필수 항목 점검 (원본)
+├── vault-template/             vault 골격 (회사·개인 데이터 없음)
 ├── install.sh                  PC에 연결 / 해제
 └── .claude-plugin/             Claude Code 플러그인 메타 (스킬만)
 ```
@@ -64,6 +68,8 @@ qa-promote     3~5단계  ✅ 정책 QA (결정테이블 · 케이스ID · given
 
 policy-extract  코드 정책 영역별 전수 → ✅/⚠️/🚫 + 파일:라인 + mermaid
 glossary-add    용어집 3줄 고정 + 📖 인덱스 갱신
+vault-record    작업·마일스톤이 끝난 턴에 vault 에 바로 기록 (개발일지 · 체크 · 영역 · 자료)
+vault-init      새 vault 생성 (PARA 폴더 · AGENTS.md · 템플릿 · 점검 스크립트 · 대시보드)
 ```
 
 ## 확인 상태 (2026-10-08)
@@ -77,6 +83,20 @@ glossary-add    용어집 3줄 고정 + 📖 인덱스 갱신
 
 ## 설치
 
+**vault 를 처음 만들 때 (새 컴퓨터 포함)** — 플러그인이 vault 골격을 가진다.
+
+```bash
+git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
+cd ~/.phantom-obsidian
+./install.sh --init ~/Documents/Phantom-Obsidian     # vault 생성 + config.json + PC 연결
+```
+
+또는 Claude Code 에서 "vault 만들어줘" → `vault-init` 스킬이 위치를 묻고 같은 일을 한다.
+만들어지는 것: PARA 폴더 · `AGENTS.md` · 프로젝트 템플릿 9종 · `.scripts/project_lint.py` · `📓 Projects` 대시보드 · 팬텀 플로우 방법 문서 · 스킬이 쓰는 인박스/인덱스 스텁.
+이미 있는 파일은 덮어쓰지 않는다. Obsidian 에서 폴더를 열고 **Templater**(템플릿 폴더 `Templetes`) · **Dataview**(JS 쿼리) 를 설치하면 끝.
+
+**이미 vault 가 있을 때**
+
 ```bash
 git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
@@ -85,6 +105,7 @@ cp config.example.json config.json      # "vault" 값 수정
 ```
 
 vault 경로를 바꾸거나 템플릿을 고치면 `./install.sh` 다시. 해제는 `./install.sh --remove`.
+프레임워크가 관리하는 vault 파일(점검 스크립트 · 커맨드)을 최신으로: `python3 scripts/vault_init.py <vault> --update` (`.bak` 백업, 나머지는 안 건드림).
 
 ## vault 쪽 준비
 
@@ -119,8 +140,37 @@ python3 para/classify.py --no-slack          # 분류 (Slack 없이)
 
 외부 LLM은 `para/llm.py` 의 `llm_allowed()` 가 허용할 때만 (API 키 또는 claude Team · Enterprise). 스케줄 · 교정 학습(Q14)은 아직 없음.
 
+## 프로젝트 필수 항목 가드
+
+활성 프로젝트는 **완료 조건 · 마일스톤(날짜) · 완료일(`due`)** 이 있어야 한다. 비어 있으면 일이 오가는 동안 계속 리마인드한다. 점검 로직(`scripts/project_lint.py`)은 플러그인이 원본이고, vault-init 이 vault `.scripts/` 에 사본을 둔다. 훅은 플러그인 것을 직접 부르므로 vault 에 스크립트가 없어도 돈다.
+
+| 경로 | 언제 |
+|---|---|
+| `hooks/project_guard.py` SessionStart | 세션 시작에 빈 프로젝트 요약 (최대 5개) |
+| `hooks/project_guard.py` UserPromptSubmit | 프롬프트에 프로젝트 이름이 나오면 세션당 1번 상기 |
+| vault `devlog_check.py` (Slack) | 오늘·최근 14일 일지가 있는 프로젝트가 비었으면 `추가 검토사항` 에 매일 |
+| vault `📓 Projects` 대시보드 | `필수 항목` 열 |
+
+vault 경로 · 스크립트가 없으면 훅은 조용히 아무것도 안 낸다. 채우기는 vault 의 `/obsidian-project-scope <이름>`.
+
+## 실시간 기록 (배치 아님)
+
+AI 가 작업·마일스톤·결정을 끝냈다고 보고하는 **같은 턴**에 `scripts/vault_record.py` 로 vault 에 바로 쓴다. SessionStart 훅이 이 규칙과 프로젝트 목록을 주입하고, `vault-record` 스킬이 절차를 갖는다.
+
+| 하는 일 | 효과 |
+|---|---|
+| `devlog` | `<프로젝트> 개발일지/오늘.md` 의 한 일·결정·이슈·외부·내일·로그에 한 줄 |
+| `tick` | 마일스톤·세부 목표·완료 조건 체크 → 대시보드 진행률에 즉시 반영 |
+| `area` · `resource` | 영역 메모 · 자료 수집 노트에 한 줄 (이미 있는 것만) |
+
+기록 대상은 **Projects / Areas / Resources / Archives 중 정확히 한 곳**이다 (`5. Store` 는 Projects 의 중지 상태).
+기존 파일에 한 줄 추가·체크만 하고, `due`·날짜·완료 조건 문구는 안 고치고 제안만 한다. 같은 줄은 한 번만 남고, 비밀 문자열은 가려진다.
+
+**폴더 생성·보관은 사용자 허락 후에만.** 기존에서 먼저 찾고(`match`), 정말 없을 때만 묻는다. 허락 전엔 `00. 미분류` 로그에 임시 기록하고, 허락되면 `new project|area|topic --name … --approved`, 끝난 프로젝트는 `archive --project … --approved`. `--approved` 없이는 스크립트가 거부한다.
+`para/collect.py`·`classify.py`(배치 수집)는 놓친 대화를 줍는 보조로 남는다.
+
 ## 다음 층 (예정)
 
-- 가드 — vault 린트 스크립트 + PC 단위 실행(launchd 감시 / git pre-commit). 어떤 AI가 쓰든, 손으로 고치든 같은 기준으로 걸림
+- 가드 확장 — 파일명·프론트매터 린트 + PC 단위 실행(launchd 감시 / git pre-commit). 프로젝트 필수 항목 점검은 위에서 이미 동작
 - 이력 — git 자동 커밋 · 규격서 변경 이력
 - 흐름 — vault `.claude/` 운영 커맨드(devlog · jira · weekly 등) 이관
