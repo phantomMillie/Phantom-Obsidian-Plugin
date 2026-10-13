@@ -166,7 +166,7 @@ AI 가 작업·마일스톤·결정을 끝냈다고 보고하는 **같은 턴**�
 기록 대상은 **Projects / Areas / Resources / Archives 중 정확히 한 곳**이다 (`5. Store` 는 Projects 의 중지 상태).
 기존 파일에 한 줄 추가·체크만 하고, `due`·날짜·완료 조건 문구는 안 고치고 제안만 한다. 같은 줄은 한 번만 남고, 비밀 문자열은 가려진다.
 
-**폴더 생성·보관은 사용자 허락 후에만.** 기존에서 먼저 찾고(`match`), 정말 없을 때만 묻는다. 허락 전엔 `00. 미분류` 로그에 임시 기록하고, 허락되면 `new project|area|topic --name … --approved`, 끝난 프로젝트는 `archive --project … --approved`. `--approved` 없이는 스크립트가 거부한다.
+**폴더 생성·보관은 사용자 허락 후에만.** 기존에서 먼저 찾고(`match`), 정말 없을 때만 묻는다. 허락 전엔 `00. 미분류` 로그에 임시 기록하고, 허락되면 `new area|topic --name … --approved`, 프로젝트는 `new project --name … --due … --done … --milestone … --approved` (완료일·완료 조건·마일스톤이 없으면 거부 — 사용자가 나중에 정하겠다고 할 때만 `--scope-later`), 끝난 프로젝트는 `archive --project … --approved`. `--approved` 없이는 스크립트가 거부한다.
 `para/collect.py`·`classify.py`(배치 수집)는 놓친 대화를 줍는 보조로 남는다.
 
 ## 다음 층 (예정)
