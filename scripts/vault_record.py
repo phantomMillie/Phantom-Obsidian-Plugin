@@ -7,7 +7,9 @@
   vault_record.py resource --topic T --text "..."                      3. Resources/T/📎 T 수집.md
   vault_record.py projects                                             기록할 수 있는 프로젝트 목록
   vault_record.py match    --name N                                    비슷한 기존 프로젝트·영역·자료 주제 (새로 만들기 전에 먼저)
-  vault_record.py new project|area|topic --name N --approved          새 폴더·노트 (사용자 승인 뒤에만)
+  vault_record.py new project --name N --due D --done "조건" --milestone "D 내용" --approved
+                                                                      새 프로젝트 (승인 + 완료일·완료 조건·마일스톤을 사용자에게 물어 받은 뒤에만)
+  vault_record.py new area|topic --name N --approved                  새 영역·자료 주제 (사용자 승인 뒤에만)
   vault_record.py archive  --project P --approved                     끝난 프로젝트를 4. Archives 로 (사용자 승인 뒤에만)
 
 규칙
@@ -310,6 +312,40 @@ def template_text(vault, filename):
     return f.read_text(encoding="utf-8")
 
 
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def scope_args(a):
+    """새 프로젝트의 완료일·완료 조건·마일스톤. 사용자가 답한 값이어야 한다 — 없으면 만들지 않고 물어보게 한다."""
+    if a.scope_later:
+        return None
+    miss = []
+    if not a.due or not DATE_RE.match(a.due) or a.due.startswith("9999"):
+        miss.append("--due YYYY-MM-DD (완료일)")
+    if not (a.done or "").strip():
+        miss.append('--done "<완료 조건 한 문장>"')
+    ms = [m.strip() for m in (a.milestone or []) if m.strip()]
+    if not ms or any(not DATE_RE.match(m.split(" ", 1)[0]) for m in ms):
+        miss.append('--milestone "YYYY-MM-DD <내용>" (1개 이상, 날짜로 시작)')
+    if miss:
+        die("새 프로젝트는 만들면서 완료일 · 완료 조건 · 마일스톤을 같이 받는다. 빠진 것: %s\n"
+            "→ 사용자에게 먼저 묻는다(말한 값만 쓴다, 지어내지 않는다). 사용자가 \"나중에\"라고 하면 `--scope-later` 로 비워 만들고 `/obsidian-project-scope` 를 제안한다." % ", ".join(miss))
+    return a.due, a.done.strip(), ms
+
+
+def fill_scope(ov, due, done, ms):
+    """Overview 의 due · 완료 조건 · 마일스톤 빈 칸을 채운다. 칸을 못 찾으면 실패 (비어 있는 채로 조용히 만들지 않는다)."""
+    ov, n = re.subn(r"^due:[ \t]*$", "due: " + due, ov, count=1, flags=re.M)
+    if not n:
+        die("Overview 에서 `due:` 칸을 못 찾았다 (템플릿 구조가 바뀜)")
+    for head, lines in (("## ✅ 완료 조건", [done]), ("## 🏁 마일스톤", ms)):
+        pat = re.compile(r"(%s\n(?:>.*\n)*)- \[ \][ \t]*\n" % re.escape(head))
+        if not pat.search(ov):
+            die("Overview 에서 `%s` 의 빈 항목을 못 찾았다 (템플릿 구조가 바뀜)" % head)
+        ov = pat.sub(lambda m: m.group(1) + "".join("- [ ] %s\n" % l for l in lines), ov, count=1)
+    return ov
+
+
 def cmd_match(a):
     vault, paths = vault_and_paths(a.vault)
     for label, pool in (("프로젝트", active_projects(vault, paths)), ("영역", areas(vault, paths)), ("자료 주제", topics(vault, paths))):
@@ -324,6 +360,7 @@ def cmd_new(a):
     today = datetime.date.today().isoformat()
     if a.kind == "project":
         need_approval(a, "새 프로젝트 `%s`" % name)
+        scope = scope_args(a)
         root = vault / paths.get("projects", "1. Projects")
         if (root / name).exists():
             die("프로젝트 `%s` 이미 있다" % name)
@@ -337,14 +374,20 @@ def cmd_new(a):
         ov = re.search(r"tR \+= %s;" % LIT, t)
         if not ov or len(files) < 4:
             die("프로젝트 템플릿 형식을 못 읽었다 (구조가 바뀜). Templater 로 직접 만든다.")
-        files["1. Projects/%s/📓 %s Overview" % (name, name)] = unlit(ov.group(1), title=name, tag=tag, created=today)
+        ov_text = unlit(ov.group(1), title=name, tag=tag, created=today)
+        if scope:
+            ov_text = fill_scope(ov_text, *scope)
+        files["1. Projects/%s/📓 %s Overview" % (name, name)] = ov_text
         made = []
         for rel, body in files.items():
             dst = vault / (rel + ".md")
             dst.parent.mkdir(parents=True, exist_ok=True)
             atomic_write(dst, body)
             made.append(dst.name)
-        print("프로젝트 생성 %s (%d개 파일). 완료 조건·마일스톤·완료일은 비어 있다 → /obsidian-project-scope %s" % (name, len(made), name))
+        if scope:
+            print("프로젝트 생성 %s (%d개 파일). 완료일 %s · 완료 조건 1 · 마일스톤 %d 채움" % (name, len(made), scope[0], len(scope[2])))
+        else:
+            print("프로젝트 생성 %s (%d개 파일). --scope-later: 완료 조건·마일스톤·완료일 비어 있다 → /obsidian-project-scope %s" % (name, len(made), name))
     elif a.kind == "area":
         need_approval(a, "새 영역 `%s`" % name)
         root = vault / paths.get("areas", "2. Areas")
@@ -411,6 +454,8 @@ def main(argv=None):
     sub.add_parser("projects").set_defaults(fn=cmd_projects)
     s = sub.add_parser("match"); s.add_argument("--name", required=True); s.set_defaults(fn=cmd_match)
     s = sub.add_parser("new"); s.add_argument("kind", choices=["project", "area", "topic"]); s.add_argument("--name", required=True)
+    s.add_argument("--due"); s.add_argument("--done"); s.add_argument("--milestone", action="append")
+    s.add_argument("--scope-later", action="store_true", help="사용자가 나중에 정하겠다고 한 경우만")
     s.add_argument("--approved", action="store_true"); s.set_defaults(fn=cmd_new)
     s = sub.add_parser("archive"); s.add_argument("--project", required=True); s.add_argument("--approved", action="store_true"); s.set_defaults(fn=cmd_archive)
     a = ap.parse_args(argv)
