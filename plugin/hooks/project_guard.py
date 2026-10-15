@@ -4,6 +4,7 @@
   SessionStart      → 비어 있는 활성 프로젝트 전부 (빠진 항목별로 묶어 이름을 다 보인다)
   UserPromptSubmit  → 프롬프트에 프로젝트 이름이 나오면, 그 프로젝트가 비었을 때 세션당 1번 상기
 
+SessionStart 때 scripts/bootstrap.py 도 부른다 — 플러그인만 받은 PC 에 vault · TODO 앱을 깐다.
 점검 로직은 플러그인의 `scripts/project_lint.py` (vault-init 이 vault `.scripts/` 에도 사본을 둔다).
 vault·스크립트가 없거나 실패하면 아무것도 안 낸다 — 훅이 세션을 막지 않는다.
 """
@@ -18,6 +19,14 @@ from phantom_home import load_config, phantom_home      # noqa: E402
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent  # 캐시 사본일 수 있다 — 코드만 여기서 읽는다
 HOME = phantom_home(__file__)                            # config.json · state 는 늘 실제 홈에서
 STATE = HOME / "state" / "guard.json"
+
+
+def bootstrap():
+    """처음 받은 PC 준비 — vault 는 바로 만들고, 나머지(Obsidian 설정 · TODO 앱)는 뒤에서 돌린다."""
+    script = PLUGIN / "scripts" / "bootstrap.py"
+    subprocess.run([sys.executable, str(script), "--fast"], capture_output=True, timeout=8)
+    subprocess.Popen([sys.executable, str(script)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def lint():
@@ -56,6 +65,11 @@ def main():
     except Exception:
         data = {}
     event = data.get("hook_event_name") or ("UserPromptSubmit" if data.get("prompt") else "SessionStart")
+    if event == "SessionStart":
+        try:
+            bootstrap()
+        except Exception:
+            pass
     rows = lint()
     bad = [r for r in rows if r["missing"]]
 

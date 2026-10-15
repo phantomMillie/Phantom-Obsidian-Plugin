@@ -7,6 +7,7 @@
 #   ./install.sh --init <폴더>   vault 를 다른 자리에 만들고 싶을 때만 폴더를 준다
 #   ./install.sh --remove   연결 해제 (이 레포 파일은 그대로)
 #   --no-obsidian           Obsidian 플러그인 설치 · vault 등록을 건너뛴다
+#   --no-todo-pile          바탕화면 TODO 앱(macOS) 설치를 건너뛴다
 #
 # 하는 일
 #   1. config.json 의 vault 경로로 PHANTOM.md(전역 지침) 생성
@@ -17,6 +18,7 @@
 #        ~/.codex/AGENTS.md    PHANTOM.md 내용 (Codex 는 import 없음)
 #   4. Claude Code 플러그인 등록 (스킬)
 #   5. vault 에 Templater · Dataview 설치 + Obsidian vault 목록에 등록 (plugin/scripts/obsidian_setup.py)
+#   6. 바탕화면 TODO 앱 빌드 + 로그인 시 자동 실행 (plugin/scripts/bootstrap.py — 플러그인 훅도 같은 걸 한다)
 #   관리 블록 밖 내용은 건드리지 않는다.
 set -euo pipefail
 
@@ -117,3 +119,10 @@ case " $* " in
   *" --no-obsidian "*) echo "건너뜀 Obsidian 준비 (--no-obsidian)" ;;
   *) python3 "$REPO/plugin/scripts/obsidian_setup.py" "$VAULT" || true ;;
 esac
+
+# 6. 바탕화면 TODO 앱 · Obsidian 설정 — 플러그인 훅이 세션 시작 때 똑같이 한다. 여기서는 바로 끝까지 돌린다.
+if [ -n "${PHANTOM_NO_TODO_PILE:-}" ] || case " $* " in *" --no-todo-pile "*) true;; *) false;; esac; then
+  PHANTOM_NO_TODO_PILE=1 PHANTOM_HOME="$REPO" python3 "$REPO/plugin/scripts/bootstrap.py" || true
+else
+  PHANTOM_HOME="$REPO" python3 "$REPO/plugin/scripts/bootstrap.py" || true
+fi

@@ -212,22 +212,41 @@ def cmd_devlog(a):
 
 
 # ── todo ───────────────────────────────────────────────────
-# 할 일은 받을 때 중요도 · 마감 · 난이도를 정한다. 이 값으로 tools/todo-pile 이 바탕화면에 쌓는다.
+# 할 일은 받을 때 중요도 · 마감 · 난이도를 정한다. 이 값으로 plugin/tools/todo-pile 이 바탕화면에 쌓는다.
 #   - [ ] 🔸 [프로젝트] 내용 · ❗상 · 📅 2026-10-20
 IMPORTANCE = ["상", "중", "하"]
 EFFORT = ["⚡", "🔸", "🧱"]
 
 
+TODO_HEAD = """---
+title: TODO - {d}
+date: {d}
+tags: [TODO, Daily]
+---
+
+## 할 것
+"""
+TODO_FILE = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
+
+
 def today_todo_file(vault, paths):
-    """오늘 TODO 파일. 없으면 배치(devlog_dispatch.ensure_todo_file)로 만든다 — 어제 미완료 이월이 거기서 일어난다."""
+    """오늘 TODO 파일. 없으면 여기서 만든다 — 폴더도 같이, 이전 파일의 미완료는 `⏭ MM-DD` 를 달아 가져온다."""
     tdir = vault / paths.get("todo", "3. Resources/07. TODO")
-    f = tdir / ("%s.md" % datetime.date.today().isoformat())
-    if not f.exists():
-        code = ("import sys; sys.argv=['x','--no-llm','--no-slack']; sys.path.insert(0, %r); "
-                "import devlog_dispatch as d; d.ensure_todo_file(d.today())" % str(vault / ".scripts"))
-        subprocess.run([sys.executable, "-c", code], cwd=str(vault), capture_output=True, timeout=120)
-    if not f.exists():
-        die("오늘 TODO 파일(%s)을 못 만들었다. vault/.scripts/devlog_dispatch.py 를 확인한다." % f)
+    today = datetime.date.today()
+    f = tdir / ("%s.md" % today.isoformat())
+    if f.exists():
+        return f
+    tdir.mkdir(parents=True, exist_ok=True)
+    prev = sorted(p for p in tdir.iterdir() if TODO_FILE.match(p.name) and p.stem < today.isoformat())
+    carried = []
+    if prev:
+        src = prev[-1]
+        mmdd = datetime.date.fromisoformat(src.stem).strftime("%m-%d")
+        for l in src.read_text(encoding="utf-8").split("\n"):
+            if l.startswith("- [ ] "):
+                body = l[6:]
+                carried.append("- [ ] " + (body if body.startswith("⏭") else "⏭ %s %s" % (mmdd, body)))
+    atomic_write(f, TODO_HEAD.format(d=today.isoformat()) + "".join(c + "\n" for c in carried))
     return f
 
 
