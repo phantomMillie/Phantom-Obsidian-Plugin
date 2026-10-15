@@ -2,6 +2,17 @@
 
 Phantom Obsidian vault 작업 방식(팬텀 플로우 · 정책 추출 · 용어집)을 **이 PC의 모든 코딩 에이전트**가 쓰게 하는 프레임워크. 개인용.
 
+> **Obsidian 커뮤니티 플러그인이 아니다.** 이름에 `Obsidian-Plugin` 이 들어가지만 `.obsidian/plugins/` 에 넣는 물건이 아니다.
+> vault 마다 설치하는 게 아니라 **PC 당 한 번** `~/.phantom-obsidian` 에 설치하고, 연결되는 vault 는 `config.json` 의 `vault` 하나다.
+> AI 에이전트에게 설치를 시킬 때는 [`AGENTS.md`](AGENTS.md) 를 먼저 읽게 하라.
+
+```bash
+git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
+cd ~/.phantom-obsidian
+./install.sh --init ~/Documents/Phantom-Obsidian   # 새 vault 를 만들면서 설치
+# 이미 vault 가 있으면: cp config.example.json config.json  →  "vault" 수정  →  ./install.sh
+```
+
 ## 원칙
 
 - **PC 종속.** 한 번 설치하면 어느 AI · 어느 작업 폴더 · 어느 세션에서든 같은 지침과 스킬이 로드된다. 세션 훅 · 환경변수 · 작업 폴더에 기대지 않는다
