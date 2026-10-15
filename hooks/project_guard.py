@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """프로젝트 필수 항목(완료 조건 · 마일스톤 · 완료일) 리마인드 훅.
 
-  SessionStart      → 비어 있는 활성 프로젝트 요약 (최대 5개)
+  SessionStart      → 비어 있는 활성 프로젝트 전부 (빠진 항목별로 묶어 이름을 다 보인다)
   UserPromptSubmit  → 프롬프트에 프로젝트 이름이 나오면, 그 프로젝트가 비었을 때 세션당 1번 상기
 
 점검 로직은 플러그인의 `scripts/project_lint.py` (vault-init 이 vault `.scripts/` 에도 사본을 둔다).
@@ -83,11 +83,16 @@ def main():
         return
 
     if event == "SessionStart":
-        lines = ["- %s — 없음: %s" % (r["project"], ", ".join(r["missing"])) for r in bad[:5]]
-        more = "" if len(bad) <= 5 else "\n(외 %d개)" % (len(bad) - 5)
+        # 이름을 접지 않는다 — "(외 N개)" 로 접으면 모델이 빈 곳을 추측으로 채운다
+        groups = {}
+        for r in bad:
+            groups.setdefault(", ".join(r["missing"]), []).append(r["project"])
+        lines = ["- 없음: %s — %s" % (miss, ", ".join(names)) for miss, names in groups.items()]
+        ok = [r["project"] for r in rows if not r["missing"]]
         print("## 필수 항목이 빈 프로젝트 (%d개)\n\n프로젝트는 완료 조건 · 마일스톤(날짜) · 완료일이 있어야 한다. "
-              "아래 프로젝트 작업·로그·회의가 나오면 한 줄로 채우자고 제안한다 (`/obsidian-project-scope <이름>`).\n\n%s%s"
-              % (len(bad), "\n".join(lines), more))
+              "아래 프로젝트 작업·로그·회의가 나오면 한 줄로 채우자고 제안한다 (`/obsidian-project-scope <이름>`).\n\n%s\n\n"
+              "채워짐: %s\n이 목록은 세션 시작 시점 기준이다. 비었다고 말하기 전에 `project_lint.py` 나 Overview 로 지금 상태를 확인한다."
+              % (len(bad), "\n".join(lines), ", ".join(ok) or "(없음)"))
         return
 
     prompt = data.get("prompt") or ""
