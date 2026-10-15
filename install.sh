@@ -40,9 +40,14 @@ if src:
     txt = (txt + "\n\n" if txt else "") + f"{S}\n{body}\n{E}"
 if txt:
     f.write_text(txt + "\n", encoding="utf-8")
+    # 블록만 넣고 뺀다. 사용자가 쓴 나머지 내용은 그대로 남는다.
+    print(("갱신 " if src else "블록 제거 ") + str(f))
 elif f.exists():
+    # 블록을 빼고 나니 빈 파일 — 우리가 만든 파일이었다는 뜻이다.
     f.unlink()
-print(("갱신 " if src else "제거 ") + str(f))
+    print("삭제 " + str(f))
+else:
+    print("없음 " + str(f))
 EOF
 }
 
@@ -55,6 +60,12 @@ if [ "$REMOVE" = 1 ]; then
     claude plugin uninstall phantom-vault@phantom-obsidian >/dev/null 2>&1 || true
     claude plugin marketplace remove phantom-obsidian >/dev/null 2>&1 || true
     echo "제거 Claude Code 플러그인"
+  fi
+  # Obsidian vault 목록에서 뺀다 — 안 빼면 없어진 폴더를 가리키는 항목이 남는다.
+  # vault 폴더와 그 안의 문서는 지우지 않는다.
+  if [ -f "$REPO/config.json" ]; then
+    V="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("vault",""))' "$REPO/config.json")"
+    [ -n "$V" ] && python3 "$REPO/scripts/obsidian_setup.py" "$V" --unregister
   fi
   exit 0
 fi

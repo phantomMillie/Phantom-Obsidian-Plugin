@@ -2,6 +2,7 @@
 """vault 를 Obsidian 에서 바로 열 수 있게 만든다 — 커뮤니티 플러그인 설치 · 설정 · vault 등록.
 
   python3 obsidian_setup.py <vault> [--skip-download] [--skip-register]
+  python3 obsidian_setup.py <vault> --unregister      vault 목록에서만 뺀다 (파일은 그대로)
 
 하는 일
   1. Templater · Dataview 최신 릴리스를 <vault>/.obsidian/plugins/<id>/ 에 받는다
@@ -135,11 +136,37 @@ def register_vault(vault):
     return "등록 vault (Obsidian 을 껐다 켜면 목록에 보인다)"
 
 
+def unregister_vault(vault):
+    """Obsidian 의 vault 목록에서 뺀다. vault 폴더 자체는 건드리지 않는다."""
+    cfg_dir = obsidian_config_dir()
+    if cfg_dir is None:
+        return "건너뜀 vault 등록 해제 (Obsidian 설정 폴더 없음)"
+    path = cfg_dir / "obsidian.json"
+    cfg = read_json(path, {})
+    vaults = cfg.get("vaults")
+    if not isinstance(vaults, dict):
+        return "건너뜀 vault 등록 해제 (목록 없음)"
+    target = str(vault)
+    gone = [k for k, v in vaults.items() if v.get("path") == target]
+    if not gone:
+        return "등록 안 돼 있음"
+    for k in gone:
+        del vaults[k]
+    write_json(path, cfg)
+    return "등록 해제 vault"
+
+
 def main(argv):
     if not argv or argv[0].startswith("--"):
         print(__doc__.strip(), file=sys.stderr)
         return 1
     vault = pathlib.Path(argv[0]).expanduser().resolve()
+
+    if "--unregister" in argv:
+        # vault 폴더가 이미 지워진 뒤에 불릴 수 있으므로 존재를 따지지 않는다.
+        print(unregister_vault(vault))
+        return 0
+
     if not vault.is_dir():
         print("vault 폴더가 없다: %s" % vault, file=sys.stderr)
         return 1
