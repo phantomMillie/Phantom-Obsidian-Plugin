@@ -80,9 +80,12 @@ done
 
 # 3. 전역 지침 관리 블록
 IMPORT="$(mktemp)"; printf '@%s\n' "$REPO/PHANTOM.md" > "$IMPORT"
-[ -d "$HOME/.claude" ] && block "$HOME/.claude/CLAUDE.md" "$IMPORT"
-[ -d "$HOME/.gemini" ] && block "$HOME/.gemini/GEMINI.md" "$IMPORT"
-[ -d "$HOME/.codex"  ] && block "$HOME/.codex/AGENTS.md" "$REPO/PHANTOM.md"
+# 홈 폴더가 아직 없어도 CLI 가 깔려 있으면 만들어서 쓴다 — 처음 설치하는 PC 에서는
+# ~/.claude 같은 폴더가 그 도구를 한 번 돌린 뒤에야 생기기 때문.
+want() { [ -d "$HOME/$1" ] || command -v "$2" >/dev/null; }
+want .claude claude && { mkdir -p "$HOME/.claude"; block "$HOME/.claude/CLAUDE.md" "$IMPORT"; }
+want .gemini gemini && { mkdir -p "$HOME/.gemini"; block "$HOME/.gemini/GEMINI.md" "$IMPORT"; }
+want .codex  codex  && { mkdir -p "$HOME/.codex";  block "$HOME/.codex/AGENTS.md" "$REPO/PHANTOM.md"; }
 rm -f "$IMPORT"
 
 # 4. Claude Code 플러그인 (로컬 폴더를 직접 읽으므로 수정 즉시 반영)

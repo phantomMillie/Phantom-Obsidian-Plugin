@@ -85,7 +85,7 @@ def main(argv):
     for r in updated:
         print("  갱신(.bak 백업) %s" % r)
     print(write_config(target, "--set-default" in argv))
-    print("다음: Obsidian 에서 이 폴더를 열고 Templater · Dataview 설치 → README.md 참고. 연결은 ./install.sh")
+    print("다음: ./install.sh — PC 연결 · Templater · Dataview 설치 · Obsidian vault 등록까지 한다.")
 
 
 if __name__ == "__main__":
