@@ -6,6 +6,7 @@
 #   ./install.sh --init          vault 를 레포 안 ./vault 에 새로 만들고(scripts/vault_init.py) 연결까지
 #   ./install.sh --init <폴더>   vault 를 다른 자리에 만들고 싶을 때만 폴더를 준다
 #   ./install.sh --remove   연결 해제 (이 레포 파일은 그대로)
+#   --no-obsidian           Obsidian 플러그인 설치 · vault 등록을 건너뛴다
 #
 # 하는 일
 #   1. config.json 의 vault 경로로 PHANTOM.md(전역 지침) 생성
@@ -15,6 +16,7 @@
 #        ~/.gemini/GEMINI.md   PHANTOM.md import
 #        ~/.codex/AGENTS.md    PHANTOM.md 내용 (Codex 는 import 없음)
 #   4. Claude Code 플러그인 등록 (스킬)
+#   5. vault 에 Templater · Dataview 설치 + Obsidian vault 목록에 등록 (scripts/obsidian_setup.py)
 #   관리 블록 밖 내용은 건드리지 않는다.
 set -euo pipefail
 
@@ -89,3 +91,10 @@ if command -v claude >/dev/null; then
   claude plugin install phantom-vault@phantom-obsidian >/dev/null 2>&1 || true
   echo "등록 Claude Code 플러그인 phantom-vault@phantom-obsidian"
 fi
+
+# 5. Obsidian 쪽 준비 — Templater · Dataview 설치 · 설정 · vault 등록
+#    네트워크가 없으면 내려받기만 실패하고 나머지는 끝난다. --no-obsidian 으로 통째로 건너뛴다.
+case " $* " in
+  *" --no-obsidian "*) echo "건너뜀 Obsidian 준비 (--no-obsidian)" ;;
+  *) python3 "$REPO/scripts/obsidian_setup.py" "$VAULT" || true ;;
+esac

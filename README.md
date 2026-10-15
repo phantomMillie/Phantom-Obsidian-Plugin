@@ -107,7 +107,11 @@ vault 는 `~/.phantom-obsidian/vault` 에 생긴다 — 프레임워크 홈 안�
 
 또는 Claude Code 에서 "vault 만들어줘" → `vault-init` 스킬이 위치를 묻고 같은 일을 한다.
 만들어지는 것: PARA 폴더 · `AGENTS.md` · 프로젝트 템플릿 9종 · `.scripts/project_lint.py` · `📓 Projects` 대시보드 · 팬텀 플로우 방법 문서 · 스킬이 쓰는 인박스/인덱스 스텁.
-이미 있는 파일은 덮어쓰지 않는다. Obsidian 에서 폴더를 열고 **Templater**(템플릿 폴더 `Templetes`) · **Dataview**(JS 쿼리) 를 설치하면 끝.
+이미 있는 파일은 덮어쓰지 않는다.
+
+**Templater · Dataview 는 `install.sh` 가 직접 설치한다** (`scripts/obsidian_setup.py`) — 최신 릴리스를 `<vault>/.obsidian/plugins/` 에 받고, 켜고,
+템플릿 폴더 `Templetes` · Dataview JS 쿼리까지 맞추고, Obsidian 의 vault 목록에도 등록한다. Obsidian 을 껐다 켜면 목록에 vault 가 보이고 바로 쓸 수 있다.
+네트워크가 없으면 내려받기만 건너뛰고 나머지는 끝난다. 통째로 건너뛰려면 `./install.sh --no-obsidian`.
 
 **이미 vault 가 있을 때**
 

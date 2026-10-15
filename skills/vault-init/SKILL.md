@@ -19,7 +19,9 @@ description: 새 Phantom vault(PARA 폴더 · AGENTS.md · 프로젝트 템플�
    ```bash
    cd ~/.phantom-obsidian && ./install.sh
    ```
-4. 사용자에게 한 번만 안내: Obsidian 에서 폴더 열기 → **Templater**(템플릿 폴더 `Templetes`) · **Dataview**(JS 쿼리 켜기) 설치.
+4. `install.sh` 가 Templater · Dataview 설치와 Obsidian vault 등록까지 한다. 손으로 깔라고 안내하지 않는다.
+   Obsidian 이 켜져 있었다면 껐다 켜야 vault 목록에 보인다는 것만 알린다. 내려받기가 실패했을 때만
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/obsidian_setup.py" "<경로>"` 를 다시 돌린다.
 
 ## 규칙
 

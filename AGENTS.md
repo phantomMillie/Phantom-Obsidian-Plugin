@@ -51,7 +51,10 @@ cp config.example.json config.json      # "vault" 값을 기존 vault 절대 경
 
 ## 설치 후 남는 일
 
-Obsidian 에서 vault 폴더를 열고 **Templater**(템플릿 폴더 `Templetes`) 와 **Dataview**(JS 쿼리 켜기)
-를 설치하라고 안내한다. 이 둘은 vault 템플릿과 대시보드가 쓰는 실제 Obsidian 플러그인이다.
+**없다.** `install.sh` 가 Templater · Dataview 까지 받아서 켜고(`scripts/obsidian_setup.py`),
+Obsidian 의 vault 목록에도 등록한다. 사용자에게 손으로 플러그인을 깔라고 안내하지 마라.
+Obsidian 이 켜져 있었다면 껐다 켜야 vault 목록에 보인다는 것만 알려주면 된다.
+
+내려받기가 실패했을 때만(네트워크 없음 등) `python3 scripts/obsidian_setup.py <vault>` 를 다시 돌린다.
 
 나머지 구조 · 스킬 · 설정 키는 `README.md` 를 봐라.
