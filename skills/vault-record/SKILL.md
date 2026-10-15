@@ -15,18 +15,21 @@ $R resource --topic <주제> --text "..."                         # 3. Resources
 $R match  --name <이름>                                        # 새로 만들기 전에: 비슷한 기존 프로젝트 · 영역 · 주제
 $R new project|area|topic --name <이름> --approved             # 새 폴더 · 노트 (사용자 허락 뒤에만)
 $R archive --project <이름> --approved                         # 끝난 프로젝트 → 4. Archives (사용자 허락 뒤에만)
+$R shelve  --project <이름> --approved                         # 임시로 밀린 프로젝트 → 5. Store (사용자 허락 뒤에만)
+$R resume  --project <이름> --approved                         # Store → 1. Projects 로 되돌림 (사용자 허락 뒤에만)
 ```
 
-## 4분류 — 기록할 가치가 있는 프롬프트는 정확히 한 곳
+## 5분류(PARAS) — 기록할 가치가 있는 프롬프트는 정확히 한 곳
 
 | 곳 | 기준 | 하는 일 |
 |---|---|---|
-| **Projects** | 끝이 있는 일 (완료 조건 · 기한). 중지(`5. Store`)도 여기 | `devlog` + 해당 항목이면 `tick` |
+| **Projects** | 끝이 있는 일 (완료 조건 · 기한) | `devlog` + 해당 항목이면 `tick` |
 | **Areas** | 끝이 없는 지속 책임 | `area` 메모 |
 | **Resources** | 나중에 찾아볼 참고 지식 · 자료 · 정책 | `resource` 수집 |
 | **Archives** | 끝난 것 | `archive` (프로젝트가 완전히 끝났을 때만) |
+| **Store** | 임시로 밀린 것 (나중에 다시 할 일) | `shelve` (Projects → Store) · 다시 하면 `resume`. Store 프로젝트에는 일지를 쓰지 않는다 |
 
-판정 순서: 끝이 있나 → Projects / 지속 책임 → Areas / 참고용 → Resources / 끝났나 → Archives. 질문 · 잡담 · 탐색은 기록하지 않는다.
+판정 순서: 끝이 있나 → Projects / 지속 책임 → Areas / 참고용 → Resources / 끝났나 → Archives / 지금은 못 하고 미룬다 → Store. 질문 · 잡담 · 탐색은 기록하지 않는다.
 
 ## 폴더 생성 = 사용자 허락 (매번 만들 수 없다)
 
@@ -34,7 +37,7 @@ $R archive --project <이름> --approved                         # 끝난 프로
 2. 정말 없을 때만 **한 줄로 묻는다**: `새 <프로젝트|영역|자료 주제> \`<이름>\` 만들까요? (이유 한 줄)`. **프로젝트면 완료일 · 완료 조건 · 마일스톤(날짜)도 같은 질문에서 같이 묻는다.**
 3. 답을 기다리는 동안: `00. 미분류` 개발일지 로그에 `[분류 대기: 영역 보안] ...` 로 임시 기록 (잃어버리지 않기 위해).
 4. 허락되면 → 그 곳에 기록. 영역·주제는 `$R new area|topic --name <이름> --approved`, 프로젝트는 `$R new project --name <이름> --due <YYYY-MM-DD> --done "<완료 조건>" --milestone "<YYYY-MM-DD 내용>" --approved` (`--milestone` 은 여러 번 가능). 거절되면 미분류에 두고 **같은 이름을 다시 묻지 않는다**.
-5. `--approved` 는 사용자가 방금 허락했을 때만 붙인다. 보관(`archive`)도 이동이라 같은 규칙. 이동 뒤 `[[옛 경로]]` 링크는 직접 확인해서 알린다.
+5. `--approved` 는 사용자가 방금 허락했을 때만 붙인다. 보관(`archive`) · 보류(`shelve`) · 재개(`resume`)도 이동이라 같은 규칙. 이동 뒤 `[[옛 경로]]` 링크는 직접 확인해서 알린다.
 
 새 프로젝트는 완료일 · 완료 조건 · 마일스톤 없이는 스크립트가 만들지 않는다(거부 메시지가 빠진 항목을 알려 준다). 값은 사용자가 말한 것만 쓰고 지어내지 않는다. 사용자가 "나중에"라고 할 때만 `--scope-later` 로 비워 만들고 `/obsidian-project-scope <이름>` 을 제안한다.
 

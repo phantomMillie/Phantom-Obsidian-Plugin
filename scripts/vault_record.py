@@ -11,6 +11,8 @@
                                                                       새 프로젝트 (승인 + 완료일·완료 조건·마일스톤을 사용자에게 물어 받은 뒤에만)
   vault_record.py new area|topic --name N --approved                  새 영역·자료 주제 (사용자 승인 뒤에만)
   vault_record.py archive  --project P --approved                     끝난 프로젝트를 4. Archives 로 (사용자 승인 뒤에만)
+  vault_record.py shelve   --project P --approved                     임시로 밀린 프로젝트를 5. Store 로 (사용자 승인 뒤에만)
+  vault_record.py resume   --project P --approved                     Store 의 프로젝트를 1. Projects 로 되돌림 (사용자 승인 뒤에만)
 
 규칙
 - 기존 파일에 **한 줄 추가**만 한다. 지우거나 다시 쓰지 않는다. 날짜(due)·완료 조건 문구는 건드리지 않는다.
@@ -97,6 +99,10 @@ def resolve_project(vault, paths, name):
     low = [n for n in names if n.lower() == name.lower() or re.sub(r"^\d+\.\s*", "", n) == name]
     if len(low) == 1:
         return low[0]
+    store = vault / paths.get("store", "5. Store")
+    if (store / name).is_dir():
+        die("프로젝트 `%s` 는 5. Store(임시로 밀림)에 있다. 다시 시작하는 일이면 사용자에게 재개해도 되는지 묻고 `resume --project %s --approved`. "
+            "아니면 기록하지 않는다." % (name, name))
     die("프로젝트 `%s` 없음. 비슷한 기존: %s / 전체: %s\n맞는 게 없으면: 사용자에게 새 프로젝트를 만들어도 되는지 한 줄로 묻는다 (승인 전엔 `00. 미분류` 에 임시 기록)."
         % (name, ", ".join(near(name, names)) or "-", ", ".join(names) or "(없음)"))
 
@@ -431,10 +437,63 @@ def cmd_archive(a):
         moved_dev = True
     ov = next(dst.glob("📓*Overview.md"), None)
     if ov:
-        t = ov.read_text(encoding="utf-8")
-        t = re.sub(r"^status:.*$", "status: done", t, count=1, flags=re.M) if re.search(r"^status:", t, re.M) else t.replace("\ntags:", "\nstatus: done\ntags:", 1)
-        atomic_write(ov, t)
-    print("보관 %s → %s%s. 링크 정리: 옛 경로 `[[1. Projects/%s/...]]` 는 직접 확인 필요" % (a.project, dst.relative_to(vault), " (+개발일지)" if moved_dev else "", a.project))
+        set_frontmatter(ov, "done", None)
+    n = relink(dst, a.project, src.parent.relative_to(vault).as_posix(), paths.get("archives", "4. Archives"))
+    print("보관 %s → %s%s (status: done, 자기 폴더 링크 %d개 문서 갱신). 다른 문서에서 옛 경로 `[[%s/%s/...]]` 로 거는 링크는 직접 확인 필요"
+          % (a.project, dst.relative_to(vault), " (+개발일지)" if moved_dev else "", n, src.parent.relative_to(vault).as_posix(), a.project))
+
+
+def relink(folder, name, old_root, new_root):
+    """옮긴 폴더 안 문서의 자기 폴더 링크(`[[<옛>/<이름>/...`)만 새 위치로. 다른 곳으로 가는 링크는 안 건드린다."""
+    old, new = "[[%s/%s/" % (old_root, name), "[[%s/%s/" % (new_root, name)
+    n = 0
+    for f in folder.rglob("*.md"):
+        t = f.read_text(encoding="utf-8")
+        if old in t:
+            atomic_write(f, t.replace(old, new))
+            n += 1
+    return n
+
+
+def set_frontmatter(ov, status, tags):
+    t = ov.read_text(encoding="utf-8")
+    m = re.match(r"---\n(.*?)\n---\n", t, re.S)
+    if not m:
+        return
+    fm = m.group(1)
+    fm = re.sub(r"^status:.*$", "status: " + status, fm, count=1, flags=re.M) if re.search(r"^status:", fm, re.M) else re.sub(r"^(tags:)", "status: %s\n\\1" % status, fm, count=1, flags=re.M)
+    if tags is not None:
+        fm = re.sub(r"^tags:.*$", "tags: [%s]" % tags, fm, count=1, flags=re.M)
+    atomic_write(ov, "---\n" + fm + "\n---\n" + t[m.end():])
+
+
+def move_project(a, src_key, dst_key, status, tags_fn, what):
+    vault, paths = vault_and_paths(a.vault)
+    need_approval(a, what)
+    roots = {"projects": paths.get("projects", "1. Projects"), "store": paths.get("store", "5. Store"),
+             "archives": paths.get("archives", "4. Archives")}
+    src, dst = vault / roots[src_key] / a.project, vault / roots[dst_key] / a.project
+    if not src.is_dir():
+        die("`%s/%s` 가 없다" % (roots[src_key], a.project))
+    if dst.exists():
+        die("`%s/%s` 이미 있다" % (roots[dst_key], a.project))
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+    ov = next(dst.glob("📓*Overview.md"), None)
+    if ov:
+        set_frontmatter(ov, status, tags_fn(a.project))
+    n = relink(dst, a.project, roots[src_key], roots[dst_key])
+    return vault, paths, dst, n
+
+
+def cmd_shelve(a):
+    vault, paths, dst, n = move_project(a, "projects", "store", "paused", lambda p: "project/paused", "프로젝트 `%s` 보류(5. Store 로 이동)" % a.project)
+    print("보류 %s → %s (status: paused, 자기 폴더 링크 %d개 문서 갱신). 개발일지는 그대로 둔다. 다시 하게 되면 resume" % (a.project, dst.relative_to(vault), n))
+
+
+def cmd_resume(a):
+    vault, paths, dst, n = move_project(a, "store", "projects", "active", lambda p: "project/" + "-".join(p.split()), "프로젝트 `%s` 재개(1. Projects 로 이동)" % a.project)
+    print("재개 %s → %s (status: active, 링크 %d개 문서 갱신). 완료 조건·마일스톤·완료일이 비었으면 /obsidian-project-scope %s" % (a.project, dst.relative_to(vault), n, a.project))
 
 
 def cmd_projects(a):
@@ -458,6 +517,8 @@ def main(argv=None):
     s.add_argument("--scope-later", action="store_true", help="사용자가 나중에 정하겠다고 한 경우만")
     s.add_argument("--approved", action="store_true"); s.set_defaults(fn=cmd_new)
     s = sub.add_parser("archive"); s.add_argument("--project", required=True); s.add_argument("--approved", action="store_true"); s.set_defaults(fn=cmd_archive)
+    for nm, fn in (("shelve", cmd_shelve), ("resume", cmd_resume)):
+        s = sub.add_parser(nm); s.add_argument("--project", required=True); s.add_argument("--approved", action="store_true"); s.set_defaults(fn=fn)
     a = ap.parse_args(argv)
     a.fn(a)
 

@@ -25,14 +25,14 @@
 - frontmatter: `status: active|paused|done` (Store 는 `paused` + `tags: [project/paused]`)
 - 분류용 칸(`00. 미분류` · `01. Daily`)은 프로젝트가 아니라 점검에서 뺀다
 
-## 4분류와 폴더 생성 (프롬프트 기록)
+## 5분류(PARAS)와 폴더 생성 (프롬프트 기록)
 
-기록할 가치가 있는 프롬프트·작업은 **Projects / Areas / Resources / Archives 중 정확히 한 곳**에 들어간다
-(끝이 있나 → Projects · 지속 책임 → Areas · 참고용 → Resources · 끝났나 → Archives. `5. Store` 는 Projects 의 중지 상태).
+기록할 가치가 있는 프롬프트·작업은 **Projects / Areas / Resources / Archives / Store 중 정확히 한 곳**에 들어간다
+(끝이 있나 → Projects · 지속 책임 → Areas · 참고용 → Resources · 끝났나 → Archives · 지금은 못 하고 미룬다 → Store). Store 는 임시로 밀린 것 — `status: paused` + `tags: [project/paused]`, 일지는 쓰지 않는다.
 
 - **폴더·노트 생성은 사용자 허락 후에만.** 기존에서 먼저 찾고(비슷한 이름 포함), 정말 없을 때만 한 줄로 묻는다. 허락 전에는 `00. 미분류` 개발일지 로그에 `[분류 대기: ...]` 로 임시 기록한다
-- 보관(`4. Archives` 로 이동)도 허락 필요. 거절된 이름은 다시 묻지 않는다
-- 도구: `scripts/vault_record.py` (`devlog` · `tick` · `area` · `resource` · `match` · `new` · `archive`) — `vault-record` 스킬
+- 보관(`4. Archives`) · 보류(`5. Store`) · 재개(Store → Projects) 같은 이동도 허락 필요. 거절된 이름은 다시 묻지 않는다
+- 도구: `scripts/vault_record.py` (`devlog` · `tick` · `area` · `resource` · `match` · `new` · `archive` · `shelve` · `resume`) — `vault-record` 스킬
 
 ## 프로젝트 폴더 신규 파일 = 승인 필요
 

@@ -3,3 +3,4 @@ PHANTOM.md
 state/
 .DS_Store
 __pycache__/
+vault/
