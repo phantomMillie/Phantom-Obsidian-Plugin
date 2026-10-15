@@ -9,7 +9,7 @@ Phantom Obsidian vault 작업 방식(팬텀 플로우 · 정책 추출 · 용어
 ```bash
 git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
-./install.sh --init ~/Documents/Phantom-Obsidian   # 새 vault 를 만들면서 설치
+./install.sh --init                                # 새 vault 를 ~/.phantom-obsidian/vault 에 만들면서 설치
 # 이미 vault 가 있으면: cp config.example.json config.json  →  "vault" 수정  →  ./install.sh
 ```
 
@@ -99,8 +99,11 @@ vault-init      새 vault 생성 (PARA 폴더 · AGENTS.md · 템플릿 · 점�
 ```bash
 git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
-./install.sh --init ~/Documents/Phantom-Obsidian     # vault 생성 + config.json + PC 연결
+./install.sh --init                                  # vault 생성 + config.json + PC 연결
 ```
+
+vault 는 `~/.phantom-obsidian/vault` 에 생긴다 — 프레임워크 홈 안이고 `.gitignore` 에 걸려 있어 레포에 올라가지 않는다.
+다른 자리에 두고 싶을 때만 `./install.sh --init <폴더>` 로 폴더를 준다.
 
 또는 Claude Code 에서 "vault 만들어줘" → `vault-init` 스킬이 위치를 묻고 같은 일을 한다.
 만들어지는 것: PARA 폴더 · `AGENTS.md` · 프로젝트 템플릿 9종 · `.scripts/project_lint.py` · `📓 Projects` 대시보드 · 팬텀 플로우 방법 문서 · 스킬이 쓰는 인박스/인덱스 스텁.

@@ -14,12 +14,14 @@ PC 당 설치는 하나이고, 연결되는 vault 도 `config.json` 의 `vault` 
 
 그 다음 사용자에게 **딱 한 가지만** 묻는다 — 연결할 vault 가 이미 있는가, 새로 만드는가.
 
-vault 를 새로 만드는 경우:
+vault 를 새로 만드는 경우 — **위치를 묻지 마라.** 기본값은 프레임워크 홈 안 `~/.phantom-obsidian/vault`
+이고, `.gitignore` 에 걸려 있어 레포에 올라가지 않는다. 사용자가 먼저 다른 자리를 말할 때만
+`./install.sh --init <폴더>` 로 폴더를 준다.
 
 ```bash
 git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
-./install.sh --init <만들 vault 폴더>
+./install.sh --init
 ```
 
 이미 vault 가 있는 경우:
@@ -40,6 +42,7 @@ cp config.example.json config.json      # "vault" 값을 기존 vault 절대 경
 | 경로 | 무엇 |
 |---|---|
 | `~/.phantom-obsidian/` | 프레임워크 본체 (clone 위치. 다른 경로에 두지 않는다) |
+| `~/.phantom-obsidian/vault/` | vault 기본 자리. `.gitignore` 에 걸려 레포에 올라가지 않는다 |
 | `~/.claude/CLAUDE.md` · `~/.gemini/GEMINI.md` · `~/.codex/AGENTS.md` | `<!-- phantom-obsidian:start/end -->` 관리 블록 추가. 블록 밖은 건드리지 않는다 |
 | `~/.agents/skills/*` | `skills/*` 로 가는 심볼릭 링크 |
 | Claude Code 플러그인 | `phantom-vault@phantom-obsidian` 등록 |

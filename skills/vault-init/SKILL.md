@@ -9,10 +9,11 @@ description: 새 Phantom vault(PARA 폴더 · AGENTS.md · 프로젝트 템플�
 
 ## 순서
 
-1. **위치를 묻는다.** 추천 기본값 `~/Documents/Phantom-Obsidian`. 이미 vault 가 있으면 그 경로(기존 파일은 안 덮는다).
+1. **위치는 묻지 않는다.** 기본값은 프레임워크 홈 안 `~/.phantom-obsidian/vault` — `.gitignore` 에 걸려 레포에 올라가지 않는다.
+   사용자가 먼저 다른 자리를 말하거나 이미 vault 가 있을 때만 그 경로를 쓴다(기존 파일은 안 덮는다).
 2. 만든다:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "<경로>" --set-default
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "${CLAUDE_PLUGIN_ROOT}/vault" --set-default
    ```
 3. PC 에 연결한다(전역 지침 · 스킬 링크):
    ```bash

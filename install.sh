@@ -3,7 +3,8 @@
 # 여러 번 돌려도 같은 결과. config.json 을 바꾼 뒤에도 다시 돌린다.
 #
 #   ./install.sh            연결 / 갱신
-#   ./install.sh --init <폴더>   vault 를 새로 만들고(scripts/vault_init.py) 연결까지
+#   ./install.sh --init          vault 를 레포 안 ./vault 에 새로 만들고(scripts/vault_init.py) 연결까지
+#   ./install.sh --init <폴더>   vault 를 다른 자리에 만들고 싶을 때만 폴더를 준다
 #   ./install.sh --remove   연결 해제 (이 레포 파일은 그대로)
 #
 # 하는 일
@@ -21,8 +22,7 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 REMOVE=0; [ "${1:-}" = "--remove" ] && REMOVE=1
 
 if [ "${1:-}" = "--init" ]; then
-  [ -n "${2:-}" ] || { echo "사용: ./install.sh --init <만들 vault 폴더>" >&2; exit 1; }
-  python3 "$REPO/scripts/vault_init.py" "$2" --set-default
+  python3 "$REPO/scripts/vault_init.py" "${2:-$REPO/vault}" --set-default
 fi
 
 # 관리 블록 쓰기/지우기: block <파일> <내용파일|""(지우기)>
