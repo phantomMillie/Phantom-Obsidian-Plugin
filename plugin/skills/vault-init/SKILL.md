@@ -13,7 +13,7 @@ description: 새 Phantom vault(PARA 폴더 · AGENTS.md · 프로젝트 템플�
    사용자가 먼저 다른 자리를 말하거나 이미 vault 가 있을 때만 그 경로를 쓴다(기존 파일은 안 덮는다).
 2. 만든다:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "${CLAUDE_PLUGIN_ROOT}/vault" --set-default
+   PHANTOM_HOME="$HOME/.phantom-obsidian" python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "$HOME/.phantom-obsidian/vault" --set-default
    ```
 3. PC 에 연결한다(전역 지침 · 스킬 링크):
    ```bash

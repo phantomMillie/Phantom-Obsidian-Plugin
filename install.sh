@@ -3,7 +3,7 @@
 # 여러 번 돌려도 같은 결과. config.json 을 바꾼 뒤에도 다시 돌린다.
 #
 #   ./install.sh            연결 / 갱신
-#   ./install.sh --init          vault 를 레포 안 ./vault 에 새로 만들고(scripts/vault_init.py) 연결까지
+#   ./install.sh --init          vault 를 레포 안 ./vault 에 새로 만들고(plugin/scripts/vault_init.py) 연결까지
 #   ./install.sh --init <폴더>   vault 를 다른 자리에 만들고 싶을 때만 폴더를 준다
 #   ./install.sh --remove   연결 해제 (이 레포 파일은 그대로)
 #   --no-obsidian           Obsidian 플러그인 설치 · vault 등록을 건너뛴다
@@ -16,7 +16,7 @@
 #        ~/.gemini/GEMINI.md   PHANTOM.md import
 #        ~/.codex/AGENTS.md    PHANTOM.md 내용 (Codex 는 import 없음)
 #   4. Claude Code 플러그인 등록 (스킬)
-#   5. vault 에 Templater · Dataview 설치 + Obsidian vault 목록에 등록 (scripts/obsidian_setup.py)
+#   5. vault 에 Templater · Dataview 설치 + Obsidian vault 목록에 등록 (plugin/scripts/obsidian_setup.py)
 #   관리 블록 밖 내용은 건드리지 않는다.
 set -euo pipefail
 
@@ -24,7 +24,7 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 REMOVE=0; [ "${1:-}" = "--remove" ] && REMOVE=1
 
 if [ "${1:-}" = "--init" ]; then
-  python3 "$REPO/scripts/vault_init.py" "${2:-$REPO/vault}" --set-default
+  PHANTOM_HOME="$REPO" python3 "$REPO/plugin/scripts/vault_init.py" "${2:-$REPO/vault}" --set-default
 fi
 
 # 관리 블록 쓰기/지우기: block <파일> <내용파일|""(지우기)>
@@ -52,7 +52,7 @@ EOF
 }
 
 if [ "$REMOVE" = 1 ]; then
-  for s in "$REPO"/skills/*/; do l="$HOME/.agents/skills/$(basename "$s")"; [ -L "$l" ] && rm "$l" && echo "제거 $l"; done
+  for s in "$REPO"/plugin/skills/*/; do l="$HOME/.agents/skills/$(basename "$s")"; [ -L "$l" ] && rm "$l" && echo "제거 $l"; done
   [ -d "$HOME/.claude" ] && block "$HOME/.claude/CLAUDE.md" ""
   [ -d "$HOME/.gemini" ] && block "$HOME/.gemini/GEMINI.md" ""
   [ -d "$HOME/.codex"  ] && block "$HOME/.codex/AGENTS.md" ""
@@ -65,7 +65,7 @@ if [ "$REMOVE" = 1 ]; then
   # vault 폴더와 그 안의 문서는 지우지 않는다.
   if [ -f "$REPO/config.json" ]; then
     V="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("vault",""))' "$REPO/config.json")"
-    [ -n "$V" ] && python3 "$REPO/scripts/obsidian_setup.py" "$V" --unregister
+    [ -n "$V" ] && python3 "$REPO/plugin/scripts/obsidian_setup.py" "$V" --unregister
   fi
   exit 0
 fi
@@ -83,7 +83,7 @@ echo "생성 $REPO/PHANTOM.md"
 
 # 2. 스킬 링크
 mkdir -p "$HOME/.agents/skills"
-for s in "$REPO"/skills/*/; do
+for s in "$REPO"/plugin/skills/*/; do
   l="$HOME/.agents/skills/$(basename "$s")"
   if [ -e "$l" ] && [ ! -L "$l" ]; then echo "건너뜀 $l — 링크 아닌 파일이 이미 있음" >&2; continue; fi
   ln -sfn "${s%/}" "$l" && echo "링크 $l"
@@ -99,8 +99,13 @@ want .gemini gemini && { mkdir -p "$HOME/.gemini"; block "$HOME/.gemini/GEMINI.m
 want .codex  codex  && { mkdir -p "$HOME/.codex";  block "$HOME/.codex/AGENTS.md" "$REPO/PHANTOM.md"; }
 rm -f "$IMPORT"
 
-# 4. Claude Code 플러그인 (로컬 폴더를 직접 읽으므로 수정 즉시 반영)
+# 4. Claude Code 플러그인 — Claude 는 plugin/ 을 ~/.claude/plugins/cache/ 로 복사해서 돌린다.
+#    그래서 스킬·훅을 고친 뒤에는 이 스크립트를 다시 돌려야 반영된다.
+#    source 를 ./plugin 으로 좁혀 둔 덕에 config.json · vault 는 복사되지 않는다.
 if command -v claude >/dev/null; then
+  # 이미 등록돼 있으면 marketplace add 가 marketplace.json 을 다시 읽지 않는다.
+  # 먼저 떼고 붙여야 source 변경과 새 버전이 반영된다.
+  claude plugin marketplace remove phantom-obsidian >/dev/null 2>&1 || true
   claude plugin marketplace add "$REPO" >/dev/null 2>&1 || true
   claude plugin install phantom-vault@phantom-obsidian >/dev/null 2>&1 || true
   echo "등록 Claude Code 플러그인 phantom-vault@phantom-obsidian"
@@ -110,5 +115,5 @@ fi
 #    네트워크가 없으면 내려받기만 실패하고 나머지는 끝난다. --no-obsidian 으로 통째로 건너뛴다.
 case " $* " in
   *" --no-obsidian "*) echo "건너뜀 Obsidian 준비 (--no-obsidian)" ;;
-  *) python3 "$REPO/scripts/obsidian_setup.py" "$VAULT" || true ;;
+  *) python3 "$REPO/plugin/scripts/obsidian_setup.py" "$VAULT" || true ;;
 esac

@@ -9,7 +9,7 @@
     {
       "name": "phantom-vault",
       "description": "팬텀 플로우 · 정책 추출 · 용어집을 어느 폴더에서든 vault 규칙대로 작성한다.",
-      "source": "./",
+      "source": "./plugin",
       "category": "productivity"
     }
   ]

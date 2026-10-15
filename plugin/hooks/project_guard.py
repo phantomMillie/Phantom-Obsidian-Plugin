@@ -12,16 +12,20 @@ import pathlib
 import subprocess
 import sys
 
-HOME = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
+from phantom_home import load_config, phantom_home      # noqa: E402
+
+PLUGIN = pathlib.Path(__file__).resolve().parent.parent  # 캐시 사본일 수 있다 — 코드만 여기서 읽는다
+HOME = phantom_home(__file__)                            # config.json · state 는 늘 실제 홈에서
 STATE = HOME / "state" / "guard.json"
 
 
 def lint():
-    cfg = json.loads((HOME / "config.json").read_text(encoding="utf-8"))
+    cfg = load_config(__file__)
     vault = pathlib.Path(cfg["vault"]).expanduser()
     if not (vault / "1. Projects").is_dir():
         return []
-    script = HOME / "scripts" / "project_lint.py"          # 플러그인이 원본 — vault 에 스크립트가 없어도 돈다
+    script = PLUGIN / "scripts" / "project_lint.py"       # 플러그인이 원본 — vault 에 스크립트가 없어도 돈다
     out = subprocess.run([sys.executable, str(script), "--json", "--vault", str(vault)],
                          capture_output=True, text=True, timeout=8).stdout
     return json.loads(out)
@@ -30,7 +34,7 @@ def lint():
 def lists():
     """영역(🧵 노트) · 자료 주제(폴더) 이름. 못 읽으면 빈 목록."""
     try:
-        cfg = json.loads((HOME / "config.json").read_text(encoding="utf-8"))
+        cfg = load_config(__file__)
         v, paths = pathlib.Path(cfg["vault"]).expanduser(), cfg.get("paths", {})
         a = sorted(p.stem.replace("🧵 ", "", 1) for p in (v / paths.get("areas", "2. Areas")).glob("🧵 *.md"))
         r = sorted(p.name for p in (v / paths.get("resources", "3. Resources")).iterdir() if p.is_dir() and not p.name.startswith("."))
@@ -56,7 +60,7 @@ def main():
     bad = [r for r in rows if r["missing"]]
 
     if event == "SessionStart":
-        record = HOME / "scripts" / "vault_record.py"
+        record = PLUGIN / "scripts" / "vault_record.py"
         names = ", ".join(r["project"] for r in rows) or "(없음)"
         areas_s, topics_s = lists()
         print("## vault 실시간 기록\n\n"

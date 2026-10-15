@@ -24,14 +24,20 @@ cd ~/.phantom-obsidian
 ```
 ~/.phantom-obsidian/            프레임워크 홈 (PC에 하나)
 ├── config.json                 vault 경로 — PC 설정 (gitignore)
+├── vault/                      vault 본체 (gitignore)
 ├── PHANTOM.template.md         전역 지침 원본 → install.sh 가 PHANTOM.md 생성 (gitignore)
-├── skills/<이름>/SKILL.md       방법 원본
-├── hooks/project_guard.py      프로젝트 필수 항목 리마인드 훅 (Claude Code)
-├── scripts/vault_init.py       새 vault 생성 · 관리 파일 갱신
-├── scripts/project_lint.py     프로젝트 필수 항목 점검 (원본)
-├── vault-template/             vault 골격 (회사·개인 데이터 없음)
 ├── install.sh                  PC에 연결 / 해제
-└── .claude-plugin/             Claude Code 플러그인 메타 (스킬만)
+├── .claude-plugin/             마켓플레이스 메타 (source: ./plugin)
+└── plugin/                     Claude Code 가 캐시로 복사해 가는 범위
+    ├── .claude-plugin/         플러그인 메타 (스킬 · 훅)
+    ├── skills/<이름>/SKILL.md   방법 원본
+    ├── hooks/project_guard.py  프로젝트 필수 항목 리마인드 훅 (Claude Code)
+    ├── scripts/phantom_home.py config.json 위치 찾기 (캐시에서 돌아도 같은 설정)
+    ├── scripts/vault_init.py   새 vault 생성 · 관리 파일 갱신
+    ├── scripts/project_lint.py 프로젝트 필수 항목 점검 (원본)
+    └── vault-template/         vault 골격 (회사·개인 데이터 없음)
+
+config.json 과 vault 는 plugin/ 밖에 둔다 — 캐시로 복사되지 않게 하려는 것이다.
 ```
 
 `install.sh` 가 만드는 연결:
@@ -109,7 +115,7 @@ vault 는 `~/.phantom-obsidian/vault` 에 생긴다 — 프레임워크 홈 안�
 만들어지는 것: PARA 폴더 · `AGENTS.md` · 프로젝트 템플릿 9종 · `.scripts/project_lint.py` · `📓 Projects` 대시보드 · 팬텀 플로우 방법 문서 · 스킬이 쓰는 인박스/인덱스 스텁.
 이미 있는 파일은 덮어쓰지 않는다.
 
-**Templater · Dataview 는 `install.sh` 가 직접 설치한다** (`scripts/obsidian_setup.py`) — 최신 릴리스를 `<vault>/.obsidian/plugins/` 에 받고, 켜고,
+**Templater · Dataview 는 `install.sh` 가 직접 설치한다** (`plugin/scripts/obsidian_setup.py`) — 최신 릴리스를 `<vault>/.obsidian/plugins/` 에 받고, 켜고,
 템플릿 폴더 `Templetes` · Dataview JS 쿼리까지 맞추고, Obsidian 의 vault 목록에도 등록한다. Obsidian 을 껐다 켜면 목록에 vault 가 보이고 바로 쓸 수 있다.
 네트워크가 없으면 내려받기만 건너뛰고 나머지는 끝난다. 통째로 건너뛰려면 `./install.sh --no-obsidian`.
 
@@ -160,12 +166,12 @@ python3 para/classify.py --no-slack          # 분류 (Slack 없이)
 
 ## 프로젝트 필수 항목 가드
 
-활성 프로젝트는 **완료 조건 · 마일스톤(날짜) · 완료일(`due`)** 이 있어야 한다. 비어 있으면 일이 오가는 동안 계속 리마인드한다. 점검 로직(`scripts/project_lint.py`)은 플러그인이 원본이고, vault-init 이 vault `.scripts/` 에 사본을 둔다. 훅은 플러그인 것을 직접 부르므로 vault 에 스크립트가 없어도 돈다.
+활성 프로젝트는 **완료 조건 · 마일스톤(날짜) · 완료일(`due`)** 이 있어야 한다. 비어 있으면 일이 오가는 동안 계속 리마인드한다. 점검 로직(`plugin/scripts/project_lint.py`)은 플러그인이 원본이고, vault-init 이 vault `.scripts/` 에 사본을 둔다. 훅은 플러그인 것을 직접 부르므로 vault 에 스크립트가 없어도 돈다.
 
 | 경로 | 언제 |
 |---|---|
-| `hooks/project_guard.py` SessionStart | 세션 시작에 빈 프로젝트 요약 (최대 5개) |
-| `hooks/project_guard.py` UserPromptSubmit | 프롬프트에 프로젝트 이름이 나오면 세션당 1번 상기 |
+| `plugin/hooks/project_guard.py` SessionStart | 세션 시작에 빈 프로젝트 요약 (최대 5개) |
+| `plugin/hooks/project_guard.py` UserPromptSubmit | 프롬프트에 프로젝트 이름이 나오면 세션당 1번 상기 |
 | vault `devlog_check.py` (Slack) | 오늘·최근 14일 일지가 있는 프로젝트가 비었으면 `추가 검토사항` 에 매일 |
 | vault `📓 Projects` 대시보드 | `필수 항목` 열 |
 
@@ -173,7 +179,7 @@ vault 경로 · 스크립트가 없으면 훅은 조용히 아무것도 안 낸�
 
 ## 실시간 기록 (배치 아님)
 
-AI 가 작업·마일스톤·결정을 끝냈다고 보고하는 **같은 턴**에 `scripts/vault_record.py` 로 vault 에 바로 쓴다. SessionStart 훅이 이 규칙과 프로젝트 목록을 주입하고, `vault-record` 스킬이 절차를 갖는다.
+AI 가 작업·마일스톤·결정을 끝냈다고 보고하는 **같은 턴**에 `plugin/scripts/vault_record.py` 로 vault 에 바로 쓴다. SessionStart 훅이 이 규칙과 프로젝트 목록을 주입하고, `vault-record` 스킬이 절차를 갖는다.
 
 | 하는 일 | 효과 |
 |---|---|
@@ -186,7 +192,7 @@ AI 가 작업·마일스톤·결정을 끝냈다고 보고하는 **같은 턴**�
 기존 파일에 한 줄 추가·체크만 하고, `due`·날짜·완료 조건 문구는 안 고치고 제안만 한다. 같은 줄은 한 번만 남고, 비밀 문자열은 가려진다.
 
 **폴더 생성·보관은 사용자 허락 후에만.** 기존에서 먼저 찾고(`match`), 정말 없을 때만 묻는다. 허락 전엔 `00. 미분류` 로그에 임시 기록하고, 허락되면 `new area|topic --name … --approved`, 프로젝트는 `new project --name … --due … --done … --milestone … --approved` (완료일·완료 조건·마일스톤이 없으면 거부 — 사용자가 나중에 정하겠다고 할 때만 `--scope-later`), 끝난 프로젝트는 `archive --project … --approved`, 임시로 밀린 프로젝트는 `shelve`(→ Store) · 다시 하면 `resume`. `--approved` 없이는 스크립트가 거부한다.
-`para/collect.py`·`classify.py`(배치 수집)는 놓친 대화를 줍는 보조로 남는다.
+`para/collect.py` · `classify.py`(배치 수집)는 놓친 대화를 줍는 보조로 남는다.
 
 ## 다음 층 (예정)
 

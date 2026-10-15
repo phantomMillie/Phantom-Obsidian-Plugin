@@ -15,9 +15,12 @@ import pathlib
 import shutil
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from phantom_home import phantom_home                              # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent              # plugin/ — 템플릿·스크립트가 있는 곳
 TEMPLATE = ROOT / "vault-template"
-HOME = pathlib.Path(os.environ.get("PHANTOM_HOME", ROOT))          # config.json 은 플러그인 폴더에 둔다 (install.sh 와 같은 곳)
+HOME = phantom_home(__file__)                                      # config.json 이 있는 프레임워크 홈
 MANAGED = [".scripts/project_lint.py", ".claude/commands/obsidian-project-scope.md"]
 
 CONFIG_PATHS = {

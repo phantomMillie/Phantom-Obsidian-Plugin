@@ -59,7 +59,9 @@ def clean(s):
 def vault_and_paths(vault_arg):
     cfg = {}
     try:
-        cfg = json.loads((pathlib.Path(os.environ.get("PHANTOM_HOME", ROOT)) / "config.json").read_text(encoding="utf-8"))
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        from phantom_home import load_config
+        cfg = load_config(__file__)
     except Exception:
         pass
     v = vault_arg or os.environ.get("PHANTOM_VAULT") or cfg.get("vault")
