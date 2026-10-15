@@ -4,3 +4,4 @@ state/
 .DS_Store
 __pycache__/
 vault/
+tools/*/bin/

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """작업이 끝난 그 자리에서 vault 에 바로 기록한다 (배치 아님).
 
-  vault_record.py devlog   --project P --section "한 일" --text "..."   오늘 개발일지에 한 줄
+  vault_record.py devlog   --project P --section "한 일" --text "..."   오늘 개발일지에 한 줄 (할 일은 todo)
+  vault_record.py todo     --project P --text "..." --importance 상|중|하 --due YYYY-MM-DD --effort ⚡|🔸|🧱
+                                                                      오늘 TODO 에 할 일 (셋 다 사용자에게 받은 값만)
   vault_record.py tick     --project P --item "<항목 일부>"             마일스톤·세부 목표·완료 조건 체크
   vault_record.py area     --name N --text "..."                       2. Areas/🧵 N.md `## 🧠 메모`
   vault_record.py resource --topic T --text "..."                      3. Resources/T/📎 T 수집.md
@@ -30,8 +32,10 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
+import unicodedata
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SECTIONS = ["한 일", "결정", "이슈", "외부", "내일", "로그"]
@@ -185,6 +189,9 @@ def cmd_devlog(a):
     project = resolve_project(vault, paths, a.project)
     if a.section not in SECTIONS:
         die("섹션은 %s 중 하나" % ", ".join(SECTIONS))
+    if a.section == "내일":
+        die("할 일은 `todo` 로 넣는다 — 중요도 · 마감 · 난이도를 같이 받아야 한다.\n"
+            "  vault_record.py todo --project P --text \"...\" --importance 상|중|하 --due YYYY-MM-DD --effort ⚡|🔸|🧱")
     now = datetime.datetime.now()
     d = devlog_dir(vault, paths, project)
     d.mkdir(parents=True, exist_ok=True)
@@ -200,6 +207,61 @@ def cmd_devlog(a):
         return
     atomic_write(f, new)
     print("기록 %s ▸ %s ▸ %s" % (project, f.name, a.section))
+
+
+# ── todo ───────────────────────────────────────────────────
+# 할 일은 받을 때 중요도 · 마감 · 난이도를 정한다. 이 값으로 tools/todo-pile 이 바탕화면에 쌓는다.
+#   - [ ] 🔸 [프로젝트] 내용 · ❗상 · 📅 2026-10-20
+IMPORTANCE = ["상", "중", "하"]
+EFFORT = ["⚡", "🔸", "🧱"]
+
+
+def today_todo_file(vault, paths):
+    """오늘 TODO 파일. 없으면 배치(devlog_dispatch.ensure_todo_file)로 만든다 — 어제 미완료 이월이 거기서 일어난다."""
+    tdir = vault / paths.get("todo", "3. Resources/07. TODO")
+    f = tdir / ("%s.md" % datetime.date.today().isoformat())
+    if not f.exists():
+        code = ("import sys; sys.argv=['x','--no-llm','--no-slack']; sys.path.insert(0, %r); "
+                "import devlog_dispatch as d; d.ensure_todo_file(d.today())" % str(vault / ".scripts"))
+        subprocess.run([sys.executable, "-c", code], cwd=str(vault), capture_output=True, timeout=120)
+    if not f.exists():
+        die("오늘 TODO 파일(%s)을 못 만들었다. vault/.scripts/devlog_dispatch.py 를 확인한다." % f)
+    return f
+
+
+def cmd_todo(a):
+    vault, paths = vault_and_paths(a.vault)
+    project = resolve_project(vault, paths, a.project)
+    miss, due = [], None
+    if a.importance not in IMPORTANCE:
+        miss.append("--importance 상|중|하 (중요도)")
+    try:
+        due = datetime.date.fromisoformat(a.due or "")
+    except ValueError:
+        miss.append("--due YYYY-MM-DD (마감일)")
+    if a.effort not in EFFORT:
+        miss.append("--effort ⚡|🔸|🧱 (난이도: 30분 이내 · 반나절 · 하루 이상)")
+    if miss:
+        die("할 일은 받을 때 정한다. 빠짐: %s\n→ 사용자에게 먼저 묻는다(말한 값만 쓴다, 지어내지 않는다)." % ", ".join(miss))
+    f = today_todo_file(vault, paths)
+    text = f.read_text(encoding="utf-8")
+    t = clean(a.text)
+    if "[%s] %s" % (display(project), t) in text:
+        print("이미 있음 — 건너뜀: %s" % f.name)
+        return
+    line = "- [ ] %s [%s] %s · ❗%s · 📅 %s" % (a.effort, display(project), t, a.importance, due.isoformat())
+    lines = text.split("\n")
+    try:
+        i = next(k for k, l in enumerate(lines) if l.strip() == "## 할 것")
+    except StopIteration:
+        die("%s 에 `## 할 것` 이 없다" % f.name)
+    j = i + 1
+    while j < len(lines) and not lines[j].startswith("## "):
+        j += 1
+    last = max((k for k in range(i + 1, j) if lines[k].strip()), default=i)
+    lines.insert(last + 1, line)
+    atomic_write(f, "\n".join(lines))
+    print("할 일 %s ▸ %s ▸ 중요도 %s · 마감 %s · %s" % (project, f.name, a.importance, due.isoformat(), a.effort))
 
 
 # ── tick ───────────────────────────────────────────────────
@@ -507,6 +569,8 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("devlog"); s.add_argument("--project", required=True)
     s.add_argument("--section", default="한 일"); s.add_argument("--text", required=True); s.set_defaults(fn=cmd_devlog)
+    s = sub.add_parser("todo"); s.add_argument("--project", required=True); s.add_argument("--text", required=True)
+    s.add_argument("--importance"); s.add_argument("--due"); s.add_argument("--effort"); s.set_defaults(fn=cmd_todo)
     s = sub.add_parser("tick"); s.add_argument("--project", required=True); s.add_argument("--item", required=True); s.set_defaults(fn=cmd_tick)
     s = sub.add_parser("area"); s.add_argument("--name", required=True); s.add_argument("--text", required=True); s.set_defaults(fn=cmd_area)
     s = sub.add_parser("resource"); s.add_argument("--topic", required=True); s.add_argument("--text", required=True); s.set_defaults(fn=cmd_resource)
@@ -519,7 +583,8 @@ def main(argv=None):
     s = sub.add_parser("archive"); s.add_argument("--project", required=True); s.add_argument("--approved", action="store_true"); s.set_defaults(fn=cmd_archive)
     for nm, fn in (("shelve", cmd_shelve), ("resume", cmd_resume)):
         s = sub.add_parser(nm); s.add_argument("--project", required=True); s.add_argument("--approved", action="store_true"); s.set_defaults(fn=fn)
-    a = ap.parse_args(argv)
+    # 한글은 NFC 로 맞춘다 — macOS 앱(Process)이 넘긴 인자는 자모가 풀린 NFD 라 폴더 이름과 안 맞는다
+    a = ap.parse_args([unicodedata.normalize("NFC", x) for x in (sys.argv[1:] if argv is None else argv)])
     a.fn(a)
 
 

@@ -32,7 +32,7 @@
 
 - **폴더·노트 생성은 사용자 허락 후에만.** 기존에서 먼저 찾고(비슷한 이름 포함), 정말 없을 때만 한 줄로 묻는다. 허락 전에는 `00. 미분류` 개발일지 로그에 `[분류 대기: ...]` 로 임시 기록한다
 - 보관(`4. Archives`) · 보류(`5. Store`) · 재개(Store → Projects) 같은 이동도 허락 필요. 거절된 이름은 다시 묻지 않는다
-- 도구: `scripts/vault_record.py` (`devlog` · `tick` · `area` · `resource` · `match` · `new` · `archive` · `shelve` · `resume`) — `vault-record` 스킬
+- 도구: `scripts/vault_record.py` (`devlog` · `todo` · `tick` · `area` · `resource` · `match` · `new` · `archive` · `shelve` · `resume`) — `vault-record` 스킬
 
 ## 프로젝트 폴더 신규 파일 = 승인 필요
 
