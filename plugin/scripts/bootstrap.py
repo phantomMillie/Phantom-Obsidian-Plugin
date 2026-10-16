@@ -13,6 +13,7 @@ PHANTOM_NO_TODO_PILE=1 이면 3번을 건너뛴다.
 """
 import datetime
 import fcntl
+import time
 import hashlib
 import json
 import os
@@ -127,15 +128,33 @@ def ensure_todo_pile(st):
         log("todo-pile 빌드 실패: %s" % r.stderr.strip()[-300:])
         done(st, "todo_pile", False, key)
         return
-    os.replace(tmp, binary)
+    os.replace(tmp, binary)                  # 돌고 있는 앱은 옛 파일을 계속 쓴다 — 바로 죽지 않는다
     plist = pathlib.Path.home() / "Library" / "LaunchAgents" / (LABEL + ".plist")
     plist.parent.mkdir(parents=True, exist_ok=True)
-    plist.write_bytes(plistlib.dumps({
+    want = plistlib.dumps({
         "Label": LABEL, "ProgramArguments": [str(binary)], "RunAtLoad": True,
-        "KeepAlive": {"SuccessfulExit": False}}))
+        "KeepAlive": {"SuccessfulExit": False}})
     uid = str(os.getuid())
-    subprocess.run(["launchctl", "bootout", "gui/%s/%s" % (uid, LABEL)], capture_output=True)
-    r = subprocess.run(["launchctl", "bootstrap", "gui/" + uid, str(plist)], capture_output=True, text=True)
+    target = "gui/%s/%s" % (uid, LABEL)
+    loaded = subprocess.run(["launchctl", "print", target], capture_output=True).returncode == 0
+    if loaded and plist.is_file() and plist.read_bytes() == want:
+        # 이미 같은 설정으로 돌고 있다 — 끄지 않는다. 앱이 실행 파일이 바뀐 걸 보고
+        # 쓰는 중이 아닐 때(회의 녹음 · 입력 창 없음) 스스로 다시 켠다.
+        log("todo-pile 새 빌드 — 앱이 한가할 때 스스로 다시 켠다")
+        done(st, "todo_pile", True, key)
+        return
+    plist.write_bytes(want)
+    if loaded:
+        subprocess.run(["launchctl", "bootout", target], capture_output=True)
+        for _ in range(20):                  # 완전히 내려갈 때까지 — 바로 bootstrap 하면 "5: Input/output error"
+            if subprocess.run(["launchctl", "print", target], capture_output=True).returncode != 0:
+                break
+            time.sleep(0.25)
+    for attempt in range(3):
+        r = subprocess.run(["launchctl", "bootstrap", "gui/" + uid, str(plist)], capture_output=True, text=True)
+        if r.returncode == 0:
+            break
+        time.sleep(1.5)
     log("todo-pile 설치 rc=%d %s" % (r.returncode, r.stderr.strip()[-200:]))
     done(st, "todo_pile", r.returncode == 0, key)
 

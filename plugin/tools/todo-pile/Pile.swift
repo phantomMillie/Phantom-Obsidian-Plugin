@@ -808,7 +808,9 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
     let rec = NSButton(title: "● 녹음 시작", target: nil, action: nil)
     let err = NSTextField(labelWithString: "")
     var recorder: AVAudioRecorder?
-    var recFile: URL?
+    var recFiles: [URL] = []        // 녹음 조각들 (멈췄다 다시 녹음하면 하나씩 는다)
+    var autosave: Timer?
+    static let draftFile = home + "/.phantom-obsidian/state/meeting-draft.json"
     var started = Date()
     var tick: Timer?
     var onSaved: (String, String) -> Void = { _, _ in }      // (노트 경로, 노트 내용) — Claude 로 정리할 때
@@ -847,12 +849,40 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
             col.leadingAnchor.constraint(equalTo: cv.leadingAnchor, constant: 14), col.trailingAnchor.constraint(equalTo: cv.trailingAnchor, constant: -14),
         ])
         for v in col.arrangedSubviews where !(v is NSTextField && (v as! NSTextField).isBezeled == false) { v.widthAnchor.constraint(equalTo: col.widthAnchor).isActive = true }
+        restoreDraft()
+        let t = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.writeDraft() }
+        RunLoop.main.add(t, forMode: .common); autosave = t
+    }
+
+    /// 저장 전 내용은 5초마다 state/meeting-draft.json 에 — 앱이 꺼져도 다음에 열면 이어서 쓴다.
+    func writeDraft() {
+        let d: [String: Any] = ["category": category.titleOfSelectedItem ?? "", "kind": kind.titleOfSelectedItem ?? "",
+                                "attendees": attendees.stringValue, "agenda": agenda.string, "body": body.string,
+                                "decisions": decisions.string, "rec": (recFiles + [recorder?.url].compactMap { $0 }).map { $0.path }]
+        let empty = agenda.string.isEmpty && body.string.isEmpty && decisions.string.isEmpty && recFiles.isEmpty && recorder == nil
+        if empty { try? FileManager.default.removeItem(atPath: MeetingForm.draftFile); return }
+        try? JSONSerialization.data(withJSONObject: d).write(to: URL(fileURLWithPath: MeetingForm.draftFile))
+    }
+    func restoreDraft() {
+        guard let data = FileManager.default.contents(atPath: MeetingForm.draftFile),
+              let d = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        if let c = d["category"] as? String, category.itemTitles.contains(c) { category.selectItem(withTitle: c) }
+        if let k = d["kind"] as? String, kind.itemTitles.contains(k) { kind.selectItem(withTitle: k) }
+        attendees.stringValue = d["attendees"] as? String ?? ""
+        agenda.string = d["agenda"] as? String ?? ""; body.string = d["body"] as? String ?? ""; decisions.string = d["decisions"] as? String ?? ""
+        recFiles = ((d["rec"] as? [String]) ?? []).filter { FileManager.default.fileExists(atPath: $0) }.map { URL(fileURLWithPath: $0) }
+        err.textColor = .systemOrange
+        err.stringValue = "저장 안 된 회의를 이어서 열었어요" + (recFiles.isEmpty ? "" : " (녹음 \(recFiles.count)개 포함)")
     }
 
     func show() { panel.center(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(body) }
+    var busy: Bool { recorder != nil || panel.isVisible }
 
     @objc func toggleRec() {
-        if let r = recorder { r.stop(); recorder = nil; tick?.invalidate(); rec.title = "● 다시 녹음"; err.stringValue = "녹음 \(elapsed()) 저장 대기"; return }
+        if let r = recorder {
+            r.stop(); recFiles.append(r.url); recorder = nil; tick?.invalidate()
+            rec.title = "● 이어서 녹음"; err.stringValue = "녹음 \(recFiles.count)개 · 저장 대기"; writeDraft(); return
+        }
         AVCaptureDevice.requestAccess(for: .audio) { ok in
             DispatchQueue.main.async {
                 guard ok else { self.err.textColor = .systemRed; self.err.stringValue = "마이크 권한이 없어요 — 시스템 설정 › 개인정보 보호 › 마이크"; return }
@@ -861,11 +891,13 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
         }
     }
     func startRec() {
-        let u = URL(fileURLWithPath: home + "/.phantom-obsidian/state/meeting-\(Int(Date().timeIntervalSince1970)).m4a")
-        let set: [String: Any] = [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 1,
-                                  AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue]
+        // 녹음 중엔 압축 안 한 PCM(CAF) — 앱이 갑자기 꺼져도 파일이 살아 있다 (m4a 는 멈출 때 목차를 써서, 중간에 꺼지면 못 연다).
+        // 저장할 때 afconvert 로 m4a 로 줄인다(1시간 약 12MB). 녹음 중 PCM 은 16kHz 모노 — 말소리에 충분하고 1시간에 약 115MB.
+        let u = URL(fileURLWithPath: home + "/.phantom-obsidian/state/meeting-\(Int(Date().timeIntervalSince1970)).caf")
+        let set: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1,
+                                  AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false]
         guard let r = try? AVAudioRecorder(url: u, settings: set), r.record() else { err.textColor = .systemRed; err.stringValue = "녹음을 시작 못 했어요"; return }
-        recorder = r; recFile = u; started = Date()
+        recorder = r; started = Date(); writeDraft()
         err.textColor = .systemRed
         tick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
@@ -876,7 +908,8 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
 
     /// 노트를 쓴다. (경로, 내용) 또는 nil
     func save() -> (String, String)? {
-        recorder?.stop(); recorder = nil; tick?.invalidate()
+        if let r = recorder { r.stop(); recFiles.append(r.url) }
+        recorder = nil; tick?.invalidate()
         let cat = category.titleOfSelectedItem ?? "기타", k = kind.titleOfSelectedItem ?? "기타"
         let isProject = vaultProjects().contains(cat)
         let date = iso.string(from: Date())
@@ -886,13 +919,22 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
         if FileManager.default.fileExists(atPath: "\(dir)/\(name).md") {
             let hm = DateFormatter(); hm.dateFormat = "HHmm"; name += " " + hm.string(from: Date())
         }
-        var audioLine = ""
-        if let f = recFile, FileManager.default.fileExists(atPath: f.path) {
+        var audio: [String] = []
+        for (i, f) in recFiles.enumerated() where FileManager.default.fileExists(atPath: f.path) {
             try? FileManager.default.createDirectory(atPath: dir + "/녹음", withIntermediateDirectories: true)
-            let dst = "\(dir)/녹음/\(name).m4a"
-            try? FileManager.default.moveItem(atPath: f.path, toPath: dst)
-            audioLine = "\n## 녹음\n![[3. Resources/01. Meeting/\(cat)/녹음/\(name).m4a]]\n"
+            let base = recFiles.count > 1 ? "\(name) \(i + 1)" : name
+            let dst = "\(dir)/녹음/\(base).m4a"
+            if f.pathExtension == "caf" {
+                let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
+                p.arguments = ["-f", "m4af", "-d", "aac", f.path, dst]      // 16kHz 모노는 비트레이트를 정하면 거부한다 — 기본값
+                try? p.run(); p.waitUntilExit()
+                if p.terminationStatus == 0 { try? FileManager.default.removeItem(at: f); audio.append(base + ".m4a"); continue }
+                let keep = "\(dir)/녹음/\(base).caf"               // 못 바꾸면 원본 그대로 둔다
+                try? FileManager.default.moveItem(atPath: f.path, toPath: keep); audio.append(base + ".caf"); continue
+            }
+            try? FileManager.default.moveItem(atPath: f.path, toPath: dst); audio.append(base + ".m4a")
         }
+        let audioLine = audio.isEmpty ? "" : "\n## 녹음\n" + audio.map { "![[3. Resources/01. Meeting/\(cat)/녹음/\($0)]]" }.joined(separator: "\n") + "\n"
         let tag = ["팀 미팅": "team", "데일리 스크럼": "daily", "1on1": "1on1", "배포 얼라인": "deploy"][k] ?? "etc"
         let link = isProject ? "[[1. Projects/\(cat)/📓 \(cat) Overview|🔗 \(cat)]]" : "[[3. Resources/01. Meeting/\(cat)/📅 \(cat) 회의|📅 \(cat) 회의]]"
         let people = attendees.stringValue.split(separator: ",").map { "  - " + $0.trimmingCharacters(in: .whitespaces) }.joined(separator: "\n")
@@ -922,6 +964,8 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
         let path = "\(dir)/\(name).md"
         do { try text.write(toFile: path, atomically: true, encoding: .utf8) } catch { err.textColor = .systemRed; err.stringValue = "저장 실패: \(error.localizedDescription)"; return nil }
         if isProject { var pr = loadPrefs(); pr.lastProject = cat; savePrefs(pr) }
+        autosave?.invalidate(); recFiles = []
+        try? FileManager.default.removeItem(atPath: MeetingForm.draftFile)    // 저장했으니 임시본은 지운다
         return (path, text)
     }
     @objc func saveOnly() { if let r = save() { panel.close(); openInObsidian(r.0) } }
@@ -959,6 +1003,11 @@ func editPrompt(_ it: Item) -> String {
     """
 }
 
+/// 실행 파일 수정 시각 — 새 빌드가 깔렸는지 본다.
+func exeMTime() -> Date? {
+    Bundle.main.executablePath.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date }
+}
+
 // ── 앱 ──────────────────────────────────────────────────────
 final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var window: NSWindow?
@@ -980,6 +1029,16 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fetchJira { [weak self] ok, msg in self?.jiraNote = msg; if ok { self?.refresh() } }
     }
 
+    let launchedBinary = exeMTime()
+    /// 새 빌드가 깔렸으면(bootstrap · install) 쓰는 중이 아닐 때 끄고 다시 켜진다 (KeepAlive — 0 이 아닌 코드로 끝내면 launchd 가 바로 띄운다).
+    func restartIfUpdated() {
+        guard let now = exeMTime(), let was = launchedBinary, now > was else { return }
+        let typing = NSApp.windows.contains { $0.isVisible && $0 is FormPanel } || NSApp.modalWindow != nil
+        let recording = forms.contains { ($0 as? MeetingForm)?.recorder != nil }
+        if typing || recording || pile?.scene?.dragNode != nil { return }
+        plog("새 빌드 — 다시 켬"); exit(75)
+    }
+
     func applicationDidFinishLaunching(_ n: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu(); menu.delegate = self
@@ -989,6 +1048,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 3초마다 TODO 파일이 바뀌었는지 본다 (Claude · 옵시디언에서 고치면 바로 블록에 반영)
         let tm = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.refreshIfChanged() }
         RunLoop.main.add(tm, forMode: .common); timer = tm
+        let ut = Timer(timeInterval: 30, repeats: true) { [weak self] _ in self?.restartIfUpdated() }
+        RunLoop.main.add(ut, forMode: .common)
         let jt = Timer(timeInterval: 600, repeats: true) { [weak self] _ in self?.pullJira() }
         RunLoop.main.add(jt, forMode: .common); jiraTimer = jt
         pullJira()
