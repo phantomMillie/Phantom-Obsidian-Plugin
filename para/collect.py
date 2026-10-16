@@ -5,20 +5,20 @@
 #   python3 collect.py --dry-run          판단 결과만 출력. 인박스 · 상태 파일 안 건드림
 #   python3 collect.py                    적립 + 상태 갱신
 #     --since-hours N   상태 파일에 없는 세션은 최근 N시간 안에 바뀐 것만 본다 (기본 24)
-#     --limit N         한 번에 볼 세션 수 (기본 20, 최근 것부터)
+#     --limit N         한 번에 볼 세션 수 (기본 20, 최근 것부터. --no-llm 이면 제한 없음)
 #     --no-llm          LLM 없이: 끝 신호가 있는 세션만 세션 1건 = 사건 1건으로 적립 (요약 = 마지막 AI 응답)
 #
 # 수집 대상 (자동화 세션 제외 — 수집기 자신의 LLM 호출도 여기서 걸러진다):
 #   Claude Code  ~/.claude/projects/*/*.jsonl   entrypoint == "cli"     (sdk-cli = claude -p 자동화)
 #   Codex        ~/.codex/sessions/**/*.jsonl    source in {cli, vscode} (exec = codex exec 자동화)
-#   Gemini       ~/.gemini/tmp/*/chats/*.json     구 형식(messages 배열)만. 신 형식 .jsonl 은 미지원
+#   Gemini       ~/.gemini/tmp/*/chats/*.json(l)  구 형식(messages 배열) · 신 형식(.jsonl, `$set` 갱신)
 #
 # 사건 경계 · 끝 판정 (Q8): 끝 신호 ① 사용자가 끝났다고 말함 ② 커밋 · PR ③ AI 작업 완료 보고
 #   → 신호는 LLM에게 힌트로 주고, LLM이 사건을 나누고 끝났는지 판단한다. 무활동은 끝 신호로 안 쓴다.
 # 세션마다 "어디까지 적립했나"(cursor)를 상태 파일에 남긴다. 안 끝난 사건은 다음 실행 때 다시 본다.
 #
 # 외부 LLM 조건(Q15) · 호출 경로는 llm.py — 학습 안 하는 계약일 때만 LLM 을 부른다.
-import argparse, datetime, glob, hashlib, json, os, pathlib, re, sys
+import argparse, datetime, glob, hashlib, json, os, pathlib, re, shlex, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import config, llm  # noqa: E402
@@ -79,7 +79,28 @@ def log(msg):
 # session = {tool, path, id, cwd, title, lines, turns:[{role, text, ts, files, commit, pr, done}]}
 
 def _new_turn(role, ts):
-    return {"role": role, "text": "", "ts": ts or "", "files": [], "commit": False, "pr": None, "done": False}
+    return {"role": role, "text": "", "ts": ts or "", "files": [], "commit": False, "pr": None, "done": False, "recorded": []}
+
+
+VAULT_RECORD = re.compile(r"vault_record\.py\s+(devlog|todo|tick|area|resource|issue)\b")
+
+
+def _recorded(cmd):
+    """AI 가 그 턴에 바로 기록한 것(vault_record 호출) → 한 줄 요약. 아니면 None."""
+    m = VAULT_RECORD.search(cmd or "")
+    if not m:
+        return None
+    try:
+        args = shlex.split(cmd[m.end():].split("&&")[0].split(";")[0])
+    except ValueError:
+        args = cmd[m.end():].split()
+    opt = {}
+    for k, v in zip(args, args[1:] + [""]):
+        if k.startswith("--"):
+            opt[k[2:]] = v
+    head = " · ".join(x for x in (opt.get("project") or opt.get("name") or opt.get("topic"), opt.get("section")) if x)
+    body = opt.get("text") or opt.get("item") or ""
+    return f"{m.group(1)} {head} · {body}".strip(" ·")
 
 
 def _add_text(turn, text):
@@ -143,6 +164,9 @@ def read_claude(path):
                         cur["commit"] = True
                     if PR_CREATE.search(cmd):
                         cur["pr"] = cur["pr"] or "PR 생성"
+                    rec = _recorded(cmd)
+                    if rec:
+                        cur["recorded"].append(rec)
     if entry != "cli":
         return None
     return s
@@ -189,6 +213,13 @@ def read_codex(path):
             arg = p.get("arguments") or p.get("input") or ""
             arg = arg if isinstance(arg, str) else json.dumps(arg, ensure_ascii=False)
             cur["files"] += _patch_files(arg)
+            try:
+                cmdv = json.loads(arg).get("command") if arg.lstrip().startswith("{") else None
+            except json.JSONDecodeError:
+                cmdv = None
+            rec = _recorded(" ".join(cmdv) if isinstance(cmdv, list) else (cmdv or arg))
+            if rec:
+                cur["recorded"].append(rec)
             if COMMIT.search(arg):
                 cur["commit"] = True
             if PR_CREATE.search(arg):
@@ -201,19 +232,52 @@ def read_codex(path):
     return s
 
 
+def _gemini_jsonl(path):
+    """신 형식: 첫 줄 메타, 그 뒤 `{"$set": {"messages": [...]}}` 갱신(마지막이 최신) 또는 메시지 한 줄씩."""
+    meta, msgs = {}, []
+    for raw in path.open(encoding="utf-8", errors="replace"):
+        try:
+            d = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        if "sessionId" in d and "type" not in d:
+            meta = d
+        elif isinstance((d.get("$set") or {}).get("messages"), list):
+            msgs = d["$set"]["messages"]
+        elif isinstance((d.get("$push") or {}).get("messages"), (list, dict)):
+            v = d["$push"]["messages"]
+            msgs += v if isinstance(v, list) else [v]
+        elif d.get("type") and "content" in d:
+            msgs.append(d)
+    return {"sessionId": meta.get("sessionId"), "messages": msgs}
+
+
+def _gemini_text(c):
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return "\n".join(b.get("text", "") for b in c if isinstance(b, dict))
+    return ""
+
+
 def read_gemini(path):
-    try:
-        d = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except json.JSONDecodeError:
-        return None                                              # 신 형식(jsonl) — 미지원
+    if path.suffix == ".jsonl":
+        d = _gemini_jsonl(path)
+    else:
+        try:
+            d = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            return None
     msgs = d.get("messages") if isinstance(d, dict) else None
     if not isinstance(msgs, list):
         return None
     s = {"tool": "gemini", "path": str(path), "id": d.get("sessionId") or path.stem,
-         "cwd": "", "title": "", "lines": len(msgs), "turns": []}
+         "cwd": "", "title": "", "lines": len(msgs) * 2, "turns": []}
     for m in msgs:
-        role = {"user": "user", "gemini": "assistant"}.get(m.get("type"))
-        text = m.get("content") if isinstance(m.get("content"), str) else ""
+        role = {"user": "user", "gemini": "assistant", "model": "assistant", "assistant": "assistant"}.get(m.get("type"))
+        text = _gemini_text(m.get("content"))
         if not role or not text.strip() or _is_noise(text):
             continue
         t = _new_turn(role, m.get("timestamp"))
@@ -225,7 +289,7 @@ def read_gemini(path):
 SOURCES = [
     ("claude", lambda: glob.glob(str(HOME / ".claude/projects/*/*.jsonl")), read_claude),
     ("codex", lambda: glob.glob(str(HOME / ".codex/sessions/**/*.jsonl"), recursive=True), read_codex),
-    ("gemini", lambda: glob.glob(str(HOME / ".gemini/tmp/*/chats/*.json")), read_gemini),
+    ("gemini", lambda: glob.glob(str(HOME / ".gemini/tmp/*/chats/*.json")) + glob.glob(str(HOME / ".gemini/tmp/*/chats/*.jsonl")), read_gemini),
 ]
 
 
@@ -342,12 +406,46 @@ def event_id(s, start, end):
     return hashlib.sha1(f"{s['path']}|{start}|{end}".encode()).hexdigest()[:12]
 
 
+DIALOG_CHARS = 2400
+
+
+def dialog(s, start, end):
+    """판정하는 AI 가 읽을 대화 발췌 — 사용자 말 · AI 답을 턴마다 짧게.
+    길면 일한 턴(파일 수정 · 커밋 · 바로 기록)과 그 앞뒤를 먼저 담고, 남는 자리에 처음 · 끝을 채운다 —
+    긴 잡담 사이에 낀 실제 작업이 잘려 나가지 않게."""
+    idx = [i for i in range(start, end + 1) if s["turns"][i]["text"]]
+    if len(idx) > 14:
+        work = [i for i in idx if s["turns"][i]["files"] or s["turns"][i]["commit"] or s["turns"][i]["pr"] or s["turns"][i].get("recorded")]
+        keep = set()
+        for i in work:
+            keep.update(j for j in (i - 1, i, i + 1) if start <= j <= end)
+        for i in idx[:2] + idx[-4:]:
+            if len(keep) >= 14:
+                break
+            keep.add(i)
+        idx = sorted(i for i in idx if i in keep)
+    rows, prev = [], None
+    for i in idx:
+        if prev is not None and i > prev + 1:
+            rows.append(f"… {i - prev - 1}턴 생략 …")
+        t = s["turns"][i]
+        who = "사용자" if t["role"] == "user" else "AI"
+        rows.append(f"[{i}] {who}: " + one_line(mask(t["text"]), 220 if who == "사용자" else 260))
+        prev = i
+    out = " ‖ ".join(rows)
+    return out if len(out) <= DIALOG_CHARS else out[:DIALOG_CHARS - 1] + "…"
+
+
 def to_record(s, ev):
     files = ev.get("files") or []
+    turns = s["turns"][ev["start_turn"]:ev["end_turn"] + 1]
     if not files:
-        for t in s["turns"][ev["start_turn"]:ev["end_turn"] + 1]:
+        for t in turns:
             files += t["files"]
     return {
+        "cwd": s.get("cwd") or "",
+        "dialog": dialog(s, ev["start_turn"], ev["end_turn"]),
+        "recorded": [mask(x) for t in turns for x in t.get("recorded", [])],
         "id": event_id(s, ev["start_turn"], ev["end_turn"]),
         "tool": TOOL_LABEL[s["tool"]],
         "path": s["path"],
@@ -369,7 +467,9 @@ def fallback_events(s, start):
     if not ends:
         return [], start - 1
     end = ends[-1]
-    last_ai = next((t["text"] for t in reversed(s["turns"][start:end + 1]) if t["role"] == "assistant" and t["text"]), "")
+    span = s["turns"][start:end + 1]
+    worked = [t for t in span if t["role"] == "assistant" and t["text"] and (t["files"] or t["commit"] or t["pr"])]
+    last_ai = (worked or [t for t in span if t["role"] == "assistant" and t["text"]] or [{"text": ""}])[-1]["text"]   # 요약 = 마지막으로 일한 답
     sig = s["turns"][end]["signals"][0]
     return [{"start_turn": start, "end_turn": end, "title": s["title"] or s["turns"][start]["text"][:60],
              "feature": "", "work": True, "ended": True,
@@ -386,17 +486,21 @@ def one_line(text, limit=400):
 
 
 def session_project(path):
-    """프롬프트 입력 훅이 정해 둔 이 대화의 프로젝트 (state/session-projects.json). 없으면 None."""
+    """프롬프트 입력 훅이 정해 둔 이 대화의 (프로젝트, 근거) (state/session-projects.json). 없으면 (None, None)."""
     try:
         sp = json.loads((STATE_DIR / "session-projects.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
-    return ((sp.get("sessions") or {}).get(pathlib.Path(path).stem) or {}).get("project")
+        return None, None
+    v = (sp.get("sessions") or {}).get(pathlib.Path(path).stem) or {}
+    how = v.get("how")
+    if v.get("folder"):
+        how = f"{how} · 작업 폴더는 {v['folder']}"
+    return v.get("project"), how
 
 
 def render_record(r, now):
-    proj = session_project(r["path"])
-    if proj:                                    # 대화를 시작할 때 정한 프로젝트가 있으면 그게 피쳐 — 분류가 추측하지 않는다
+    proj, how = session_project(r["path"])
+    if proj:                                    # 프롬프트 입력 때 정한 프로젝트 — 판정하는 AI 에게 근거와 같이 준다
         r = dict(r, feature=proj)
     r = dict(r, title=one_line(r["title"], 120), feature=one_line(r["feature"], 80), summary=one_line(r["summary"]),
              resolved=[one_line(x, 160) for x in r["resolved"]], unresolved=[one_line(x, 160) for x in r["unresolved"]])
@@ -407,6 +511,14 @@ def render_record(r, now):
              f"- 피쳐: {r['feature'] or '—'}",
              f"- 종료: {r['end_reason']} · 끝 신호: {sig}",
              f"- 요약: {r['summary'] or '—'}"]
+    if proj:
+        lines.append(f"- 대화 프로젝트: {proj} (근거: {how or '—'})")
+    if r.get("cwd"):
+        lines.append(f"- 폴더: `{r['cwd']}`")
+    if r.get("dialog"):
+        lines.append(f"- 대화: {one_line(r['dialog'], DIALOG_CHARS)}")
+    if r.get("recorded"):
+        lines.append("- 이미 기록: " + " / ".join(one_line(x, 200) for x in r["recorded"]))
     if r["resolved"]:
         lines.append("- 해결: " + " / ".join(r["resolved"]))
     if r["unresolved"]:
@@ -458,7 +570,10 @@ def load_state():
 
 
 def candidates(state, since_hours, limit):
-    cutoff = datetime.datetime.now().timestamp() - since_hours * 3600
+    now = datetime.datetime.now().timestamp()
+    cutoff = now - since_hours * 3600
+    if state.get("last_run"):                  # 지난번 이후 바뀐 대화는 다 본다 — 며칠 안 돌았어도(주말) 빠뜨리지 않게
+        cutoff = min(cutoff, state["last_run"] - 3600)
     known = state["sessions"]
     out = []
     for tool, lister, reader in SOURCES:
@@ -474,7 +589,7 @@ def candidates(state, since_hours, limit):
                 continue
             out.append((mtime, tool, pathlib.Path(p), reader))
     out.sort(key=lambda x: x[0], reverse=True)
-    return out[:limit]
+    return out[:limit] if limit else out
 
 
 def main():
@@ -498,7 +613,8 @@ def main():
     records, skipped, failed = [], {"자동화": 0, "짧음": 0, "새 턴 없음": 0}, []
     updates = {}
 
-    for mtime, tool, path, reader in candidates(state, a.since_hours, a.limit if not a.only else 10**6):
+    limit = 0 if (a.no_llm or a.only) else a.limit           # LLM 없이는 싸다 — 바뀐 대화는 다 본다
+    for mtime, tool, path, reader in candidates(state, a.since_hours, limit):
         if a.only and a.only not in str(path):
             continue
         s = reader(path)
@@ -546,6 +662,7 @@ def main():
 
     added = append_inbox(vault, records, now) if records else 0
     state["sessions"].update(updates)
+    state["last_run"] = now.timestamp()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
     msg = f"적립 {added}건 · 건너뜀 {skipped} · 실패 {len(failed)}"

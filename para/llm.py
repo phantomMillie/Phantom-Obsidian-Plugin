@@ -101,9 +101,9 @@ def _api(prompt, schema, key):
 
 def _cli(prompt):
     raw = _read(config.local("llm_cmd"))
-    cmd = shlex.split(raw) if raw else ["claude", "-p"]
+    cmd = shlex.split(raw) if raw else ["claude", "-p", "--setting-sources", "project"]   # 훅 · 플러그인 없이 — 답이 오염되지 않게
     cmd[0] = _resolve_bin(cmd[0])
-    env = dict(os.environ)
+    env = dict(os.environ, MILLIE_PARA_LLM="1")
     env["PATH"] = env.get("PATH", "") + ":" + ":".join([str(HOME / ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"])
     try:
         r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=600, env=env)

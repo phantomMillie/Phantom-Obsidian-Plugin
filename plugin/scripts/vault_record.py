@@ -4,6 +4,9 @@
   vault_record.py devlog   --project P --section "한 일" --text "..."   오늘 개발일지에 한 줄 (할 일은 todo)
   vault_record.py todo     --project P --text "..." --importance 상|중|하 --due YYYY-MM-DD --effort ⚡|🔸|🧱
                                                                       오늘 TODO 에 할 일 (셋 다 사용자에게 받은 값만)
+  vault_record.py todo     --project P --text "..." --effort ⚡|🔸|🧱 --background
+                                                                      뒤에서 정리할 때 (사용자에게 못 물으니 중요도·마감 없이)
+  vault_record.py issue    --project P --section "프로젝트 이슈" --text "..."   🚨 <P> 이슈.md 에 안 풀린 문제 체크박스
   vault_record.py tick     --project P --item "<항목 일부>"             마일스톤·세부 목표·완료 조건 체크
   vault_record.py area     --name N --text "..."                       2. Areas/🧵 N.md `## 🧠 메모`
   vault_record.py resource --topic T --text "..."                      3. Resources/T/📎 T 수집.md
@@ -262,6 +265,9 @@ def cmd_todo(a):
         miss.append("--due YYYY-MM-DD (마감일)")
     if a.effort not in EFFORT:
         miss.append("--effort ⚡|🔸|🧱 (난이도: 30분 이내 · 반나절 · 하루 이상)")
+    if a.background:                                   # 뒤에서 정리 — 물을 사람이 없다. 난이도만 받고 나머지는 비운다
+        miss = [m for m in miss if m.startswith("--effort")]
+        due = due if a.due else None
     if miss:
         die("할 일은 받을 때 정한다. 빠짐: %s\n→ 사용자에게 먼저 묻는다(말한 값만 쓴다, 지어내지 않는다)." % ", ".join(miss))
     f = today_todo_file(vault, paths)
@@ -270,7 +276,11 @@ def cmd_todo(a):
     if "[%s] %s" % (display(project), t) in text:
         print("이미 있음 — 건너뜀: %s" % f.name)
         return
-    line = "- [ ] %s [%s] %s · ❗%s · 📅 %s" % (a.effort, display(project), t, a.importance, due.isoformat())
+    line = "- [ ] %s [%s] %s" % (a.effort, display(project), t)
+    if a.importance in IMPORTANCE:
+        line += " · ❗%s" % a.importance
+    if due:
+        line += " · 📅 %s" % due.isoformat()
     lines = text.split("\n")
     try:
         i = next(k for k, l in enumerate(lines) if l.strip() == "## 할 것")
@@ -282,7 +292,39 @@ def cmd_todo(a):
     last = max((k for k in range(i + 1, j) if lines[k].strip()), default=i)
     lines.insert(last + 1, line)
     atomic_write(f, "\n".join(lines))
-    print("할 일 %s ▸ %s ▸ 중요도 %s · 마감 %s · %s" % (project, f.name, a.importance, due.isoformat(), a.effort))
+    print("할 일 %s ▸ %s ▸ 중요도 %s · 마감 %s · %s" % (project, f.name, a.importance or "-", due.isoformat() if due else "-", a.effort))
+
+
+# ── issue ──────────────────────────────────────────────────
+# 안 풀린 문제는 프로젝트 이슈 문서에 체크박스로. 문서는 프로젝트를 만들 때 템플릿이 같이 만든다 — 없으면 만들지 않는다.
+ISSUE_SECTIONS = ["프로젝트 이슈", "정책 이슈", "일정 이슈"]
+
+
+def cmd_issue(a):
+    vault, paths = vault_and_paths(a.vault)
+    project = resolve_project(vault, paths, a.project)
+    if a.section not in ISSUE_SECTIONS:
+        die("이슈 섹션은 %s 중 하나" % ", ".join(ISSUE_SECTIONS))
+    f = vault / paths.get("projects", "1. Projects") / project / ("🚨 %s 이슈.md" % display(project))
+    if not f.exists():
+        die("%s 가 없다 — 이슈 문서는 새로 만들지 않는다(사용자 허락 필요). 개발일지 `이슈` 섹션에만 남긴다." % f.name)
+    t = clean(a.text)
+    text = f.read_text(encoding="utf-8")
+    if "- [ ] %s" % t in text:
+        print("이미 있음 — 건너뜀: %s" % f.name)
+        return
+    lines = text.split("\n")
+    try:
+        i = next(k for k, l in enumerate(lines) if l.strip() == "## " + a.section)
+    except StopIteration:
+        die("%s 에 `## %s` 가 없다" % (f.name, a.section))
+    j = i + 1
+    while j < len(lines) and not (lines[j].startswith("#") or lines[j].strip() == "---"):
+        j += 1
+    body = [l for l in lines[i + 1:j] if l.strip() and not re.match(r"^\s*-\s*(\[[ xX]\])?\s*$", l)]
+    lines[i + 1:j] = body + ["- [ ] %s" % t, ""]
+    atomic_write(f, "\n".join(lines))
+    print("이슈 %s ▸ %s ▸ %s" % (project, f.name, a.section))
 
 
 # ── tick ───────────────────────────────────────────────────
@@ -591,7 +633,11 @@ def main(argv=None):
     s = sub.add_parser("devlog"); s.add_argument("--project", required=True)
     s.add_argument("--section", default="한 일"); s.add_argument("--text", required=True); s.set_defaults(fn=cmd_devlog)
     s = sub.add_parser("todo"); s.add_argument("--project", required=True); s.add_argument("--text", required=True)
-    s.add_argument("--importance"); s.add_argument("--due"); s.add_argument("--effort"); s.set_defaults(fn=cmd_todo)
+    s.add_argument("--importance"); s.add_argument("--due"); s.add_argument("--effort")
+    s.add_argument("--background", action="store_true", help="뒤에서 정리할 때만 — 중요도·마감 없이 넣는다")
+    s.set_defaults(fn=cmd_todo)
+    s = sub.add_parser("issue"); s.add_argument("--project", required=True); s.add_argument("--section", default="프로젝트 이슈")
+    s.add_argument("--text", required=True); s.set_defaults(fn=cmd_issue)
     s = sub.add_parser("tick"); s.add_argument("--project", required=True); s.add_argument("--item", required=True); s.set_defaults(fn=cmd_tick)
     s = sub.add_parser("area"); s.add_argument("--name", required=True); s.add_argument("--text", required=True); s.set_defaults(fn=cmd_area)
     s = sub.add_parser("resource"); s.add_argument("--topic", required=True); s.add_argument("--text", required=True); s.set_defaults(fn=cmd_resource)

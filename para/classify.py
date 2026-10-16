@@ -26,7 +26,7 @@
 # 결과는 vault 루트 `📤 PARA 이동 히스토리.md` + Slack(Q13, 개발일지 영수증과 같은 웹훅).
 # 이동 히스토리에 남은 para-id 는 다시 처리하지 않는다 (중간에 죽어도 중복 기록 없음).
 # 교정을 규칙으로 올리는 것(Q14)은 아직 없음.
-import argparse, datetime, json, pathlib, re, sys, urllib.request
+import argparse, datetime, json, os, pathlib, re, subprocess, sys, tempfile, time, urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import config, llm  # noqa: E402
@@ -69,11 +69,22 @@ def areas(vault):
     return {p.stem.replace("🧵", "", 1).strip(): p for p in sorted(d.glob("🧵*.md"))} if d.exists() else {}
 
 
+SYSTEM_DIRS = ("meetings", "glossary", "todo", "devlog_inbox", "issue_inbox", "policy_index", "glossary_index")
+
+
 def resource_topics(vault):
+    """자료 주제 폴더. 회의 · 용어집 · 개발일지 · TODO 처럼 다른 기능이 쓰는 폴더는 뺀다."""
     d = config.vpath("resources")
     out = {}
+    paths = config.load()["paths"]
+    res = pathlib.PurePosixPath(paths.get("resources", "")).parts
+    system = {"07. TODO", "01. Meeting", "03. 개발일지", "02. 용어집"}
+    for k in SYSTEM_DIRS:
+        rel = pathlib.PurePosixPath(paths.get(k) or "").parts
+        if len(rel) > len(res) and rel[:len(res)] == res:
+            system.add(rel[len(res)])
     for p in sorted(d.iterdir()) if d.exists() else []:
-        if p.is_dir() and not p.name.startswith(".") and p.name not in set(config.classify_opt("resource_skip") or []):
+        if p.is_dir() and not p.name.startswith(".") and p.name not in set(config.classify_opt("resource_skip") or []) | system:
             out[re.sub(r"^\d+\.\s*", "", p.name)] = p
     return out
 
@@ -88,7 +99,7 @@ def keyword_rules(vault):
 # ── PARA 인박스 ───────────────────────────────────────────────────
 WIKILINK = re.compile(r"\[\[[^|\]]*\|([^\]]+)\]\]")          # [[경로|이름]] → 이름 (Slack 용)
 RECORD = re.compile(r"^## (?P<title>.+?)\n(?P<body>.*?)^<!-- para-id: (?P<id>\w+) -->[ \t]*$", re.S | re.M)
-APPROVE = re.compile(r"^- \[([ xX])\] 🧵 (.+?) 영역 만들기")
+APPROVE = re.compile(r"^- \[([ xX])\] (🧵|📎) (.+?) (영역|자료 주제) 만들기")
 
 
 def parse_inbox(text):
@@ -100,7 +111,7 @@ def parse_inbox(text):
         for ln in m.group("body").splitlines():
             ck = APPROVE.match(ln)
             if ck:
-                approve = (ck.group(1).lower() == "x", ck.group(2).strip())
+                approve = (ck.group(1).lower() == "x", ck.group(3).strip(), "area" if ck.group(2) == "🧵" else "resource")
                 continue
             kv = re.match(r"^- ([^:]+):\s*(.*)$", ln)
             if kv:
@@ -363,12 +374,285 @@ def send_slack(text):
         return f"실패: {e}"
 
 
+
+# ── AI 정리 (para-sort 스킬) ──────────────────────────────────────
+# 판단은 사용자가 쓰고 있는 그 AI 가 한다 — 키 · 별도 LLM 호출 없음. 스크립트는 목록을 보여 주고(--pending)
+# AI 가 낸 판정을 검사해 파일에 쓴다(--apply). 쓰기는 전부 vault_record.py 를 거친다(중복 건너뜀 · 승인 규칙).
+LOCK = ROOT / "state" / "para-sort.lock"
+LOCK_TTL = 30 * 60
+RECORD_PY = ROOT / "plugin" / "scripts" / "vault_record.py"
+ACTIONS = {"record", "skip", "defer"}
+EFFORTS = ["⚡", "🔸", "🧱"]
+
+
+def lock_age():
+    try:
+        return time.time() - json.loads(LOCK.read_text(encoding="utf-8")).get("at", 0)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def claim(force=False):
+    age = lock_age()
+    if age is not None and age < LOCK_TTL and not force:
+        return False, int(age // 60)
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    LOCK.write_text(json.dumps({"at": time.time(), "pid": os.getpid()}), encoding="utf-8")
+    return True, 0
+
+
+def release():
+    try:
+        LOCK.unlink()
+    except OSError:
+        pass
+
+
+def folder_map(projs):
+    """코드 폴더 → 프로젝트 (바탕화면 TODO 의 코드 폴더 + 대화 폴더 학습)."""
+    out = {}
+    for f, pick in ((ROOT / "state" / "todo-pile.json", lambda d: {v: k for k, v in (d.get("dirs") or {}).items()}),
+                    (ROOT / "state" / "session-projects.json", lambda d: d.get("dirs") or {})):
+        try:
+            out.update(pick(json.loads(f.read_text(encoding="utf-8"))))
+        except (OSError, json.JSONDecodeError, AttributeError):
+            pass
+    return {k: v for k, v in out.items() if v in projs}
+
+
+def convo_key(r):
+    m = re.search(r"`([^`]+)`", r["fields"].get("기록", ""))
+    return m.group(1) if m else r["id"]
+
+
+def pending_records():
+    inbox = config.vpath("para_inbox")
+    if not inbox.exists():
+        return []
+    _, recs = parse_inbox(inbox.read_text(encoding="utf-8"))
+    hist = config.vpath("para_history")
+    done = set(re.findall(r"para-id: (\w+)", hist.read_text(encoding="utf-8"))) if hist.exists() else set()
+    return [r for r in recs if r["id"] not in done]
+
+
+def cmd_pending(a):
+    vault = config.vault()
+    recs = pending_records()
+    if not recs:
+        print("PARA 정리 대기 없음")
+        return 0
+    if a.claim:
+        ok, mins = claim(a.force)
+        if not ok:
+            print(f"다른 대화가 정리 중 ({mins}분 전 시작) — 이번엔 건너뛴다")
+            return 3
+    projs, area_map, topics = projects(vault), areas(vault), resource_topics(vault)
+    fmap = folder_map(projs)
+    groups = {}
+    for r in recs:
+        groups.setdefault(convo_key(r), []).append(r)
+    out = [f"# PARA 정리 대기 {len(recs)}건 (대화 {len(groups)}개) · 오늘 {datetime.date.today()}", "",
+           "프로젝트: " + (", ".join(p for p in projs if p != config.classify_opt("fallback_project")) or "(없음)")
+           + f" · 맞는 곳 없는 업무: {config.classify_opt('fallback_project')}",
+           "영역: " + (", ".join(area_map) or "(없음)"),
+           "자료 주제: " + (", ".join(topics) or "(없음)"),
+           "코드 폴더 → 프로젝트: " + ("; ".join(f"{k} → {v}" for k, v in sorted(fmap.items())) or "(없음)"), ""]
+    keys = ("도구", "폴더", "대화 프로젝트", "종료", "요약", "해결", "미해결", "대화", "이미 기록", "보류", "대기")
+    for n, (key, rs) in enumerate(groups.items(), 1):
+        out.append(f"## 대화 {n} — {rs[0]['fields'].get('도구', '?')}" + (f" · 같은 대화에서 {len(rs)}번 주움 (이어 읽기)" if len(rs) > 1 else ""))
+        for r in rs:
+            out.append(f"### [{r['id']}] {r['title']}")
+            for k in keys:
+                v = r["fields"].get(k)
+                if v and v != "—":
+                    out.append(f"- {k}: {v}")
+            if r["approve"]:
+                out.append(f"- 승인 체크: {'됨' if r['approve'][0] else '안 됨'} ({r['approve'][1]})")
+        out.append("")
+    print("\n".join(out))
+    return 0
+
+
+def run_record(args):
+    env = dict(os.environ, MILLIE_HOME=str(ROOT))
+    r = subprocess.run([sys.executable, str(RECORD_PY), *args], capture_output=True, text=True, env=env)
+    return r.returncode == 0, (r.stdout or r.stderr).strip().splitlines()[-1:] or [""]
+
+
+def set_field(block, key, value):
+    """블록의 `- key: ...` 줄을 바꾸거나 para-id 앞에 넣는다."""
+    line = f"- {key}: {value}"
+    if re.search(rf"^- {re.escape(key)}:.*$", block, re.M):
+        return re.sub(rf"^- {re.escape(key)}:.*$", line, block, count=1, flags=re.M)
+    head, tail = block.rsplit("<!-- para-id:", 1)
+    return head + line + "\n<!-- para-id:" + tail
+
+
+def apply_item(vault, projs, area_map, topics, r, it, notes):
+    """판정 항목 하나 → (dest 문자열, 대기 블록 또는 None, 오류 또는 None)."""
+    kind, tgt = it.get("kind"), (it.get("target") or "").strip()
+    line = one_line(it.get("line") or r["title"], 160)
+    if kind == "project":
+        if tgt not in projs:
+            return None, None, f"없는 프로젝트 `{tgt}`"
+        sec = it.get("section") if it.get("section") in DEVLOG_SECTIONS else "한 일"
+        ok, msg = run_record(["devlog", "--project", tgt, "--section", sec, "--text", line])
+        if not ok:
+            return None, None, f"개발일지 실패: {msg[0]}"
+        dest = [f"개발일지 · {sec}"]
+        iss = it.get("issue") or {}
+        if isinstance(iss, dict) and iss.get("line"):
+            isec = iss.get("section") if iss.get("section") in ISSUE_SECTIONS else "프로젝트 이슈"
+            ok, msg = run_record(["issue", "--project", tgt, "--section", isec, "--text", one_line(iss["line"], 160)])
+            dest.append("이슈" if ok else "이슈(문서 없음 — 개발일지에만)")
+        todos = [t for t in it.get("todos") or [] if isinstance(t, dict) and (t.get("text") or "").strip()]
+        n = 0
+        for t in todos:
+            eff = t.get("effort") if t.get("effort") in EFFORTS else "🔸"
+            n += run_record(["todo", "--project", tgt, "--text", one_line(t["text"], 160), "--effort", eff, "--background"])[0]
+        if n:
+            dest.append(f"할 일 {n}")
+        return f"{link_project(vault, projs, tgt)} ({' · '.join(dest)})", None, None
+    if kind in ("area", "resource"):
+        pool = area_map if kind == "area" else topics
+        if not tgt:
+            return None, None, "대상 이름 없음"
+        if tgt not in pool:                              # 새 영역 · 주제는 사용자 승인 뒤에만 — 인박스에 체크박스로 남긴다
+            icon, word = ("🧵", "영역") if kind == "area" else ("📎", "자료 주제")
+            b = r["block"]
+            if "만들기 (체크하면" not in b:
+                b = set_field(b, "대기", f"새 {word} 「{tgt}」 — 체크하면 다음 정리 때 만들고 옮긴다")
+                head, tail = b.rsplit("<!-- para-id:", 1)
+                b = head + f"- [ ] {icon} {tgt} {word} 만들기 (체크하면 다음 정리 때 생성)\n<!-- para-id:" + tail
+            b = set_field(b, "대기 줄", line)
+            return f"{icon} {tgt} 승인 대기 (PARA 인박스)", b, None
+        args = ["area", "--name", tgt, "--text", line] if kind == "area" else ["resource", "--topic", tgt, "--text", line]
+        ok, msg = run_record(args)
+        if not ok:
+            return None, None, f"{kind} 실패: {msg[0]}"
+        p = area_map[tgt] if kind == "area" else topics[tgt] / f"📎 {tgt} 수집.md"
+        icon = "🧵" if kind == "area" else "📎"
+        return f"[[{p.relative_to(vault).with_suffix('')}|{icon} {tgt}]]", None, None
+    return None, None, f"모르는 kind `{kind}`"
+
+
+def cmd_apply(a):
+    vault = config.vault()
+    try:
+        data = json.loads(pathlib.Path(a.apply).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        release()
+        print(f"판정 파일을 못 읽음: {e}")
+        return 2
+    verdicts = {v.get("id"): v for v in (data.get("results") or []) if isinstance(v, dict)}
+    recs = {r["id"]: r for r in pending_records()}
+    projs, area_map, topics = projects(vault), areas(vault), resource_topics(vault)
+    now = datetime.datetime.now()
+    rows, changed, removed, notes = [], {}, set(), []
+    stat = {"기록": 0, "건너뜀": 0, "보류": 0, "승인 대기": 0, "오류": 0}
+
+    # 사용자가 체크한 승인 → 만들고 남겨 둔 줄을 넣는다
+    for r in recs.values():
+        if r["approve"] and r["approve"][0] and r["id"] not in verdicts:
+            _, name, kind = r["approve"]
+            ok, _m = run_record(["new", "area" if kind == "area" else "topic", "--name", name, "--approved"])
+            area_map, topics = areas(vault), resource_topics(vault)
+            it = {"kind": kind, "target": name, "line": r["fields"].get("대기 줄") or r["title"]}
+            dest, _b, err = apply_item(vault, projs, area_map, topics, dict(r, block=r["block"]), it, notes)
+            if dest and not _b:
+                rows.append((r, dest, "승인"))
+                removed.add(r["id"])
+                stat["기록"] += 1
+
+    for rid, v in verdicts.items():
+        r = recs.get(rid)
+        if not r or rid in removed:
+            continue
+        act = v.get("action")
+        reason = one_line(v.get("reason") or "", 80)
+        if act not in ACTIONS:
+            changed[rid] = set_field(r["block"], "보류", f"판정 오류 — action `{act}` ({now:%Y-%m-%d})")
+            stat["오류"] += 1
+            continue
+        if act == "skip":
+            rows.append((r, f"건너뜀 ({reason or '기록할 일 아님'})", "AI"))
+            removed.add(rid)
+            stat["건너뜀"] += 1
+            continue
+        if act == "defer":
+            changed[rid] = set_field(r["block"], "보류", f"{reason or '아직 안 끝남'} ({now:%Y-%m-%d})")
+            stat["보류"] += 1
+            continue
+        dests, errs, wait = [], [], None
+        for it in v.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            dest, block, err = apply_item(vault, projs, area_map, topics, r, it, notes)
+            if err:
+                errs.append(err)
+            elif block:
+                wait = block
+                r = dict(r, block=block)
+                dests.append(dest)
+            else:
+                dests.append(dest)
+        if wait:
+            changed[rid] = wait
+            stat["승인 대기"] += 1
+            rows.append((r, " + ".join(dests), "AI"))      # 승인 대기 행은 히스토리에 안 쓴다 (아래에서 거름)
+        elif dests:
+            rows.append((r, " + ".join(dests), "AI" + (f"(일부 오류: {'; '.join(errs)})" if errs else "")))
+            removed.add(rid)
+            stat["기록"] += 1
+        else:
+            changed[rid] = set_field(r["block"], "보류", f"판정 오류 — {'; '.join(errs) or '항목 없음'} ({now:%Y-%m-%d})")
+            stat["오류"] += 1
+
+    hist_path = config.vpath("para_history")
+    moved = [(r, d, h) for r, d, h in rows if r["id"] in removed]
+    if moved:
+        hist = hist_path.read_text(encoding="utf-8").rstrip("\n") if hist_path.exists() else history_header(f"{now:%Y-%m-%d}").rstrip("\n")
+        block = [f"\n\n## {now:%Y-%m-%d %H:%M} · {len(moved)}건 · AI 정리"]
+        block += [f"- {r['title']} → {d} · {h} <!-- para-id: {r['id']} -->" for r, d, h in moved]
+        tmp = hist + "\n".join(block) + "\n"
+        _atomic(hist_path, tmp)
+
+    # 인박스는 지금 다시 읽어서 — 정리하는 동안 새로 쌓인 사건을 지우지 않는다
+    inbox = config.vpath("para_inbox")
+    header, cur = parse_inbox(inbox.read_text(encoding="utf-8"))
+    keep = [changed.get(r["id"], r["block"]) for r in cur if r["id"] not in removed]
+    _atomic(inbox, header + ("\n\n" + "\n\n".join(keep) if keep else "") + "\n")
+    release()
+    msg = " · ".join(f"{k} {n}" for k, n in stat.items()) + f" · 남은 대기 {len(keep)}"
+    log("AI 정리 " + msg)
+    print("PARA 정리 " + msg)
+    return 0
+
+
+def _atomic(path, text):
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, str(path))
+
 def main():
     ap = argparse.ArgumentParser(description="PARA 분류기")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--no-slack", action="store_true")
+    ap.add_argument("--pending", action="store_true", help="AI 가 판정할 대기 목록 출력 (para-sort 스킬)")
+    ap.add_argument("--claim", action="store_true", help="--pending 과 같이: 정리 잠금 (다른 대화와 겹치지 않게)")
+    ap.add_argument("--force", action="store_true", help="--claim 잠금을 무시")
+    ap.add_argument("--apply", metavar="FILE", help="AI 판정 JSON 을 적용")
+    ap.add_argument("--release", action="store_true", help="정리 잠금만 푼다")
     a = ap.parse_args()
+    if a.release:
+        release()
+        return
+    if a.pending:
+        sys.exit(cmd_pending(a))
+    if a.apply:
+        sys.exit(cmd_apply(a))
 
     vault = config.vault()
     inbox = config.vpath("para_inbox")
@@ -410,6 +694,8 @@ def main():
     decided, source, error = decide(fresh, projs, area_map, topics, keyword_rules(vault), use_llm) if fresh else ([], "off", None)
     for r in approved:
         name = r["approve"][1]
+        if r["approve"][2] != "area":
+            continue
         decided.append((r, {"id": r["id"], "kind": "area", "target": name, "new_area": name not in area_map,
                             "approved": True, "how": "승인", "note_line": f"{r['title']} — {r['fields'].get('요약', '')}"}))
 

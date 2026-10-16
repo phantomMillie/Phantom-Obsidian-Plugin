@@ -9,7 +9,9 @@ SessionStart 때 scripts/bootstrap.py 도 부른다 — 플러그인만 받은 P
 vault·스크립트가 없거나 실패하면 아무것도 안 낸다 — 훅이 세션을 막지 않는다.
 """
 import json
+import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -34,29 +36,41 @@ PARA_EVERY = 3 * 3600      # 3시간에 한 번 뒤에서 정리한다
 
 
 def para_autosort():
-    """뒤에서 PARA 정리 — 세션 시작을 막지 않는다.
-    ① AI 대화에서 끝난 일을 줍고(collect --no-llm) ② 프로젝트 · 영역 · 자료로 나누고(classify, LLM)
-    ③ vault 분배 배치가 있으면 바로 개발일지 · TODO 에 넣는다(devlog_dispatch). 묻지 않는다."""
+    """뒤에서 대화 줍기 — 세션 시작을 막지 않는다. LLM 은 안 부른다(collect --no-llm).
+    판정(기록할지 · 어디로)은 사용자가 쓰는 AI 가 para-sort 스킬로 한다 — para_pending() 이 알린다."""
     st_path = HOME / "state" / "para-nudge.json"
     try:
         st = json.loads(st_path.read_text(encoding="utf-8"))
     except Exception:
         st = {}
     now = time.time()
-    collect, classify = HOME / "para" / "collect.py", HOME / "para" / "classify.py"
-    if now - st.get("collected", 0) < PARA_EVERY or not (collect.is_file() and classify.is_file()):
+    collect = HOME / "para" / "collect.py"
+    if now - st.get("collected", 0) < PARA_EVERY or not collect.is_file():
         return
-    cfg = load_config(__file__)
-    dispatch = pathlib.Path(cfg["vault"]).expanduser() / ".scripts" / "devlog_dispatch.py"
-    py = sys.executable
-    steps = ['"%s" "%s" --no-llm' % (py, collect), '"%s" "%s" --no-slack' % (py, classify)]
-    if dispatch.is_file():
-        steps.append('cd "%s" && "%s" "%s" --no-slack' % (dispatch.parent.parent, py, dispatch))
-    subprocess.Popen(["/bin/sh", "-c", " ; ".join(steps)], cwd=str(HOME), stdin=subprocess.DEVNULL,
+    subprocess.Popen([sys.executable, str(collect), "--no-llm"], cwd=str(HOME), stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     st["collected"] = now
     st_path.parent.mkdir(parents=True, exist_ok=True)
     st_path.write_text(json.dumps(st), encoding="utf-8")
+
+
+def para_pending():
+    """PARA 인박스에서 아직 정리 안 된 사건 수. 다른 대화가 정리 중이면 0."""
+    try:
+        lock = json.loads((HOME / "state" / "para-sort.lock").read_text(encoding="utf-8"))
+        if time.time() - lock.get("at", 0) < 30 * 60:
+            return 0
+    except Exception:
+        pass
+    try:
+        cfg = load_config(__file__)
+        v, paths = pathlib.Path(cfg["vault"]).expanduser(), cfg.get("paths", {})
+        inbox = (v / paths.get("para_inbox", "📥 PARA 인박스.md")).read_text(encoding="utf-8")
+        hist_p = v / paths.get("para_history", "📤 PARA 이동 히스토리.md")
+        done = set(re.findall(r"para-id: (\w+)", hist_p.read_text(encoding="utf-8"))) if hist_p.exists() else set()
+    except Exception:
+        return 0
+    return len(set(re.findall(r"para-id: (\w+)", inbox)) - done)
 
 
 # ── 대화 ↔ 프로젝트 (프롬프트 입력 때 LLM 없이 정한다) ─────────────
@@ -94,8 +108,9 @@ def guess_project(prompt, cwd, names, sp, prev, vault):
     return None, None
 
 
-def session_project(data):
-    """이 대화의 프로젝트를 정하고, 처음 정했거나 바뀌었을 때만 AI 에게 한 줄로 알린다."""
+def session_project(data, remind=False):
+    """이 대화의 프로젝트를 정하고, 처음 정했거나 바뀌었을 때만 AI 에게 한 줄로 알린다.
+    remind=True(세션 재개 · 압축 뒤)면 바뀌지 않았어도 다시 알린다 — 앞 대화 맥락이 사라졌을 수 있다."""
     sid = data.get("session_id")
     if not sid:
         return
@@ -110,18 +125,29 @@ def session_project(data):
     proj, how = guess_project(data.get("prompt") or "", cwd, names, sp, prev, vault)
     if not proj:
         return
-    # 폴더를 배운다 — 이름으로 정했고, 홈 · vault · 이 프레임워크 폴더가 아닐 때만
+    # 폴더를 배운다 — 이름으로 정했고, 홈 · vault · 이 프레임워크 폴더가 아니고, 아직 어느 프로젝트에도 안 묶인 폴더일 때만.
+    # 이미 묶인 폴더에서 다른 프로젝트 이름이 지나가듯 나온 걸("결제 모듈처럼 …") 배우면 그 폴더가 영영 틀린다.
     plain = {str(pathlib.Path.home()), str(vault), str(HOME)}
-    if how == "프롬프트에 이름" and cwd and cwd not in plain and not cwd.startswith(str(vault) + "/"):
+    if how == "프롬프트에 이름" and cwd and cwd not in plain and not cwd.startswith(str(vault) + "/") \
+            and guess_project("", cwd, names, sp, None, vault)[0] is None:
         sp.setdefault("dirs", {}).setdefault(cwd, proj)
+    folder = guess_project("", cwd, names, sp, None, vault)[0]
+    if proj == prev and how == "이 대화에서 앞서 정함":      # 처음 정한 근거를 남긴다 — 정리하는 AI 가 믿을지 판단한다
+        how = (sessions.get(sid) or {}).get("how") or how
     sessions[sid] = {"project": proj, "how": how, "at": int(time.time())}
+    if folder and folder != proj:
+        sessions[sid]["folder"] = folder
     cutoff = time.time() - 14 * 86400                      # 2주 지난 대화는 지운다
     sp["sessions"] = {k: v for k, v in sessions.items() if v.get("at", 0) >= cutoff}
     SP_FILE.parent.mkdir(parents=True, exist_ok=True)
     SP_FILE.write_text(json.dumps(sp, ensure_ascii=False), encoding="utf-8")
-    if proj != prev:
-        print("<para-project>이 대화의 프로젝트: `%s` (근거: %s). 끝난 일을 기록할 때(devlog · todo · tick) 이 프로젝트로 한다. "
-              "사용자가 다른 프로젝트 일이라고 하면 그쪽으로.</para-project>" % (proj, how))
+    if proj != prev or remind:
+        if folder and folder != proj:                      # 폴더와 이름이 다르다 — 이름이 지나가듯 나왔을 수 있다
+            print("<para-project>이 대화: 프롬프트에 `%s` 이름이 나왔고, 작업 폴더는 `%s` 프로젝트다. 끝난 일을 기록할 때는 "
+                  "실제로 고친 것 · 폴더가 어느 프로젝트 일인지 보고 고른다 (이름만 나온 거면 `%s`).</para-project>" % (proj, folder, folder))
+        else:
+            print("<para-project>이 대화의 프로젝트: `%s` (근거: %s). 끝난 일을 기록할 때(devlog · todo · tick) 이 프로젝트로 한다. "
+                  "사용자가 다른 프로젝트 일이라고 하면 그쪽으로.</para-project>" % (proj, how))
 
 
 def lint():
@@ -155,13 +181,15 @@ def load_state():
 
 
 def main():
+    if os.environ.get("MILLIE_PARA_LLM"):                  # 스크립트가 부른 claude -p — 훅 문구가 답을 오염시킨다
+        return
     try:
         data = json.load(sys.stdin)
     except Exception:
         data = {}
     event = data.get("hook_event_name") or ("UserPromptSubmit" if data.get("prompt") else "SessionStart")
     try:
-        session_project(data)
+        session_project(data, remind=event == "SessionStart" and data.get("source") in ("resume", "compact", "clear"))
     except Exception:
         pass
     if event == "SessionStart":
@@ -189,14 +217,22 @@ def main():
               "**폴더·노트 생성은 사용자 허락 필요 (매번 만들지 않는다).** 맞는 곳을 찾는 순서: ① 기존에서 찾는다(`match --name <이름>`, 아래 목록) ② 정말 없을 때만 사용자에게 한 줄로 묻는다 — `새 <프로젝트|영역|자료 주제> `<이름>` 만들까요? (이유 한 줄)` ③ 답을 기다리는 동안은 `00. 미분류` 개발일지 로그에 `[분류 대기: 영역 보안] ...` 로 임시 기록 ④ 허락되면 영역·주제는 `new <area|topic> --name <이름> --approved`, 프로젝트는 `new project --name <이름> --due <YYYY-MM-DD> --done \"<완료 조건>\" --milestone \"<YYYY-MM-DD 내용>\" --approved` (셋이 없으면 스크립트가 거부한다. 사용자가 \"나중에\"라고 한 경우만 `--scope-later`) 후 기록, 거절되면 미분류 유지하고 같은 이름을 다시 묻지 않는다. `--approved` 는 사용자가 방금 허락했을 때만 붙인다.\n\n"
               "- 개발일지: `python3 %s devlog --project <이름> --section \"한 일\" --text \"...\"` (섹션: 한 일·결정·이슈·외부·로그)\n"
               "- 할 일: `... todo --project <이름> --text \"...\" --importance 상|중|하 --due YYYY-MM-DD --effort ⚡|🔸|🧱` — 받을 때 중요도·마감·난이도를 사용자에게 묻고 받은 값만 쓴다\n"
+              "- 안 풀린 문제: `... issue --project <이름> --section \"프로젝트 이슈\" --text \"...\"` (프로젝트·정책·일정 이슈. 해결된 버그는 devlog `이슈` 섹션)\n"
               "- 항목 체크: `... tick --project <이름> --item \"<항목 일부>\"` (체크만. 날짜·문구는 고치지 않고 제안만)\n"
               "- 영역·자료: `... area --name <영역> --text ...` / `... resource --topic <주제> --text ...`\n"
               "- 현재 프로젝트: %s / 영역: %s / 자료 주제: %s\n기록 후 한 줄로만 보고한다.\n"
               % (record, names, areas_s, topics_s))
         try:
             para_autosort()
+            n = para_pending()
         except Exception:
-            pass
+            n = 0
+        if n:
+            skill = PLUGIN / "skills" / "para-sort" / "SKILL.md"
+            print("\n## PARA 정리 대기 %d건\n\n지난 AI 대화에서 주운 끝난 일이 정리를 기다린다. 이 세션 첫 응답 때 사용자 요청과 별개로 "
+                  "Agent 도구를 `run_in_background: true` 로 한 번 띄워 정리를 맡긴다 — 프롬프트: "
+                  "\"`%s` 를 읽고 그대로 따라 PARA 인박스를 정리한 뒤 결과를 한 줄로 보고\". 끝나면 그 한 줄을 사용자에게 전한다. "
+                  "사용자가 정리를 원치 않는다고 하면 하지 않는다.\n" % (n, skill))
         if not bad:
             return
 

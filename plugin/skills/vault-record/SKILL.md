@@ -10,6 +10,7 @@ R="python3 ${CLAUDE_PLUGIN_ROOT:-$HOME/.millie-obsidian/plugin}/scripts/vault_re
 $R projects                                                     # 기록 가능한 프로젝트
 $R devlog --project <이름> --section "한 일" --text "..."        # 섹션: 한 일 · 결정 · 이슈 · 외부 · 로그
 $R todo   --project <이름> --text "..." --importance 상|중|하 --due YYYY-MM-DD --effort ⚡|🔸|🧱   # 할 일. 셋 다 사용자에게 받은 값만 (없으면 거부 → 먼저 묻는다)
+$R issue  --project <이름> --section "프로젝트 이슈" --text "..."  # 안 풀린 문제 → 🚨 <이름> 이슈.md (프로젝트 · 정책 · 일정 이슈)
 $R tick   --project <이름> --item "<항목 일부>"                  # 마일스톤 · 세부 목표 · 완료 조건 체크
 $R area   --name <영역> --text "..."                            # 2. Areas/🧵 <영역>.md › 🧠 메모
 $R resource --topic <주제> --text "..."                         # 3. Resources/<주제>/📎 <주제> 수집.md
