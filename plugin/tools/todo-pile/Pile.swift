@@ -56,6 +56,8 @@ struct Item {
     let importance: String?
     let due: Date?
     let postponed: Int
+    var jiraKey: String? = nil     // Jira 이슈면 키 (TECHCLIENT-1815)
+    var status: String? = nil      // Jira 상태 (진행 중 …)
     var age: Int { days(origin, today()) }
     var late: Int? { due.map { days($0, today()) } }   // >0 지남, 0 오늘, <0 남음
 }
@@ -106,6 +108,7 @@ func pressure(_ it: Item) -> CGFloat {
 /// 같이 떨어지는 메아리 블록 수. 마감 지나면 하루마다 3개, 아니면 열흘마다 1개.
 func echoes(_ it: Item) -> Int {
     if let late = it.late, late > 0 { return min(late * 3, 30) }
+    if it.jiraKey != nil { return 0 }      // Jira 는 마감 지났을 때만 쌓인다
     return min(it.age / 10, 8)
 }
 
@@ -149,7 +152,12 @@ struct Prefs: Codable {
     var visible = true
     var dirs: [String: String] = [:]     // 프로젝트 → Claude 를 열 코드 폴더
     var lastProject = ""
+    var jiraSite: String? = nil      // millietown.atlassian.net
+    var jiraEmail: String? = nil
+    var jiraShow: [String]? = nil    // 블록으로 떨어뜨릴 Jira 상태 (없으면 기본값)
+    var colors: [String: [Double]]? = nil   // 프로젝트 → [색상(0~1), 밝기 단계(0·1)] — 한 번 정하면 안 바뀐다
 }
+let jiraShowDefault = ["할 일", "해야 할 일", "진행 중", "PROGRESS"]
 let prefsFile = home + "/.phantom-obsidian/state/todo-pile.json"
 func loadPrefs() -> Prefs {
     guard let d = FileManager.default.contents(atPath: prefsFile), let p = try? JSONDecoder().decode(Prefs.self, from: d) else { return Prefs() }
@@ -167,17 +175,116 @@ func vaultProjects() -> [String] {
         .map { $0.replacingOccurrences(of: #"^\d+\.\s*"#, with: "", options: .regularExpression) }.sorted()
 }
 
+// ── Jira (나한테 할당된 미완료 이슈) ─────────────────────────
+// 토큰은 키체인(서비스 todo-pile-jira, 계정 = 이메일), 사이트·이메일은 설정 파일. 마지막 결과는 state/jira-cache.json
+let jiraService = "todo-pile-jira"
+let jiraCache = home + "/.phantom-obsidian/state/jira-cache.json"
+
+func keychainGet(_ account: String) -> String? {
+    let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: jiraService,
+                            kSecAttrAccount as String: account, kSecReturnData as String: true]
+    var out: CFTypeRef?
+    guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
+    return String(data: d, encoding: .utf8)
+}
+func keychainSet(_ account: String, _ secret: String) {
+    let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: jiraService, kSecAttrAccount as String: account]
+    SecItemDelete(base as CFDictionary)
+    var add = base; add[kSecValueData as String] = Data(secret.utf8)
+    SecItemAdd(add as CFDictionary, nil)
+}
+
+func jiraRequest(site: String, email: String, token: String, path: String, query: [URLQueryItem]) -> URLRequest? {
+    var c = URLComponents(); c.scheme = "https"; c.host = site; c.path = path; c.queryItems = query.isEmpty ? nil : query
+    guard let u = c.url else { return nil }
+    var r = URLRequest(url: u, timeoutInterval: 20)
+    r.setValue("Basic " + Data("\(email):\(token)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
+    r.setValue("application/json", forHTTPHeaderField: "Accept")
+    return r
+}
+
+let jiraISO: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
+func jiraDate(_ s: String?) -> Date? {
+    guard let s = s else { return nil }
+    let fixed = s.replacingOccurrences(of: #"([+-]\d{2})(\d{2})$"#, with: "$1:$2", options: .regularExpression)   // +0900 → +09:00
+    return jiraISO.date(from: fixed) ?? ISO8601DateFormatter().date(from: fixed)
+}
+
+/// Jira 응답(JSON) → 블록용 항목.
+func jiraItems(_ data: Data, site: String) -> [Item]? {
+    guard let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let issues = j["issues"] as? [[String: Any]] else { return nil }
+    return issues.compactMap { i in
+        guard let key = i["key"] as? String, let f = i["fields"] as? [String: Any] else { return nil }
+        let pri = ((f["priority"] as? [String: Any])?["name"] as? String) ?? ""
+        let imp: String? = ["Highest": "상", "High": "상", "Medium": "중", "Low": "하", "Lowest": "하"][pri]
+        return Item(raw: "jira:" + key, origin: jiraDate(f["created"] as? String) ?? today(),
+                    project: ((f["project"] as? [String: Any])?["key"] as? String) ?? "Jira",
+                    text: "\(key) " + ((f["summary"] as? String) ?? ""), importance: imp,
+                    due: (f["duedate"] as? String).flatMap { iso.date(from: $0) }, postponed: 0,
+                    jiraKey: key, status: (f["status"] as? [String: Any])?["name"] as? String)
+    }
+}
+
+/// 캐시의 전체 Jira 항목 (상태 거르기 전).
+func jiraAll() -> [Item] {
+    guard let d = FileManager.default.contents(atPath: jiraCache), let site = loadPrefs().jiraSite else { return [] }
+    return jiraItems(d, site: site) ?? []
+}
+/// 고른 상태만.
+func loadJiraCache() -> [Item] {
+    let show = Set(loadPrefs().jiraShow ?? jiraShowDefault)
+    return jiraAll().filter { show.contains($0.status ?? "") }
+}
+
+/// 나한테 할당된 미완료 이슈를 가져와 캐시에 쓴다. 결과(성공 여부, 알림 말)는 메인 스레드로.
+func fetchJira(_ done: @escaping (Bool, String) -> Void) {
+    let pr = loadPrefs()
+    guard let site = pr.jiraSite, let email = pr.jiraEmail, let token = keychainGet(email),
+          let req = jiraRequest(site: site, email: email, token: token, path: "/rest/api/3/search/jql", query: [
+              URLQueryItem(name: "jql", value: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"),
+              URLQueryItem(name: "fields", value: "summary,status,project,issuetype,duedate,priority,created,updated"),
+              URLQueryItem(name: "maxResults", value: "100")]) else { done(false, "Jira 연결 안 됨"); return }
+    URLSession.shared.dataTask(with: req) { data, resp, err in
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        DispatchQueue.main.async {
+            guard let data = data, code == 200, let items = jiraItems(data, site: site) else {
+                plog("jira 실패 \(code) \(err?.localizedDescription ?? "")"); done(false, "Jira 응답 \(code)"); return
+            }
+            try? data.write(to: URL(fileURLWithPath: jiraCache))
+            plog("jira \(items.count)건"); done(true, "Jira \(items.count)건")
+        }
+    }.resume()
+}
+
 // ── 블록 ────────────────────────────────────────────────────
 // 프로젝트마다 한 색 (빨강은 마감 경고용으로 비워 둔다)
-let palette: [NSColor] = [
-    NSColor(srgbRed: 0.36, green: 0.36, blue: 0.84, alpha: 1),   // 인디고
-    NSColor(srgbRed: 0.07, green: 0.65, blue: 0.58, alpha: 1),   // 틸
-    NSColor(srgbRed: 0.97, green: 0.42, blue: 0.08, alpha: 1),   // 오렌지
-    NSColor(srgbRed: 0.84, green: 0.25, blue: 0.62, alpha: 1),   // 핑크
-    NSColor(srgbRed: 0.00, green: 0.56, blue: 1.00, alpha: 1),   // 블루
-    NSColor(srgbRed: 0.19, green: 0.64, blue: 0.42, alpha: 1),   // 그린
-    NSColor(srgbRed: 0.56, green: 0.31, blue: 0.78, alpha: 1),   // 바이올렛
-]
+/// 프로젝트 색 — 새 프로젝트가 생기면 이미 쓰는 색들과 색상환에서 가장 먼 색을 고른다.
+/// 빨강 근처는 마감 경고용으로 비워 두고, 색상이 가까운 이웃과는 밝기 단계를 달리 한다. 한 번 정한 색은 설정에 남아 안 바뀐다.
+func hueGap(_ a: Double, _ b: Double) -> Double { let d = abs(a - b).truncatingRemainder(dividingBy: 1); return min(d, 1 - d) }
+func projectColors(_ projects: [String]) -> [String: NSColor] {
+    var pr = loadPrefs()
+    var tab = pr.colors ?? [:]
+    var changed = false
+    for p in Set(projects).sorted() where tab[p] == nil {
+        let used = tab.values.map { $0[0] }
+        var best = 0.58, bestGap = used.isEmpty ? 2.0 : -1.0       // 첫 색은 파랑
+        for i in 0..<360 {
+            let h = Double(i) / 360
+            if h < 0.04 || h > 0.94 { continue }                    // 빨강 · 진분홍 근처 비움
+            let gap = used.map { hueGap($0, h) }.min() ?? 1
+            if gap > bestGap { bestGap = gap; best = h }
+        }
+        let near = tab.values.min { hueGap($0[0], best) < hueGap($1[0], best) }
+        tab[p] = [best, near.map { 1 - $0[1] } ?? 0]
+        changed = true
+    }
+    if changed { pr.colors = tab; savePrefs(pr) }
+    return tab.mapValues { v in
+        NSColor(calibratedHue: v[0], saturation: v[1] == 0 ? 0.78 : 0.62, brightness: v[1] == 0 ? 0.80 : 0.60, alpha: 1)
+    }
+}
+func luminance(_ c: NSColor) -> CGFloat { let x = c.usingColorSpace(.deviceRGB) ?? c; return 0.3 * x.redComponent + 0.59 * x.greenComponent + 0.11 * x.blueComponent }
+
 let alert = NSColor(srgbRed: 0.95, green: 0.23, blue: 0.25, alpha: 1)
 let shadowPad: CGFloat = 6
 
@@ -216,7 +323,7 @@ func makeSpec(_ it: Item, echo: Int, k: CGFloat, color: NSColor) -> Spec {
     let p = pressure(it)
     let f = min(24, max(12, 11 + p * 0.85)) * k
     let (f1, f2) = fonts(f)
-    var subParts = [it.project ?? "미분류", "\(it.age)일째"]
+    var subParts = [it.project ?? "미분류"] + (it.status.map { [$0] } ?? []) + ["\(it.age)일째"]
     if it.due == nil { subParts.append("마감 없음") } else if let late = it.late, late < 0 { subParts.append("마감 \(-late)일 남음") }
     if let i = it.importance { subParts.append("중요도 \(i)") }
     if it.postponed > 0 { subParts.append("\(it.postponed)번 미룸") }
@@ -253,15 +360,16 @@ func texture(_ s: Spec) -> SKTexture {
     NSGradient(starting: top, ending: base)?.draw(in: path, angle: -90)
     NSColor(white: 1, alpha: 0.18).setStroke(); let edge = NSBezierPath(roundedRect: body.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius); edge.lineWidth = 1; edge.stroke()
     if let title = s.title, let sub = s.sub {
+        let ink = luminance(s.color) > 0.62 ? NSColor(calibratedWhite: 0.08, alpha: 1) : NSColor.white
         let (f1, f2) = fonts(s.font)
         let padX = s.font * 0.9, padY = s.font * 0.55
         let line2 = f2.ascender - f2.descender
         (sub as NSString).draw(at: NSPoint(x: body.minX + padX, y: body.minY + padY),
-                               withAttributes: [.font: f2, .foregroundColor: NSColor(white: 1, alpha: 0.72)])
+                               withAttributes: [.font: f2, .foregroundColor: ink.withAlphaComponent(0.72)])
         let ts = titleSize(title, f1, s.textW + 1)
         // draw(in:) 은 뒤집히지 않은 좌표에서도 위에서부터 줄을 내려 쓴다
         (title as NSString).draw(in: NSRect(x: body.minX + padX, y: body.minY + padY + line2 + s.font * 0.3, width: s.textW + 1, height: ts.height + 2),
-                                 withAttributes: [.font: f1, .foregroundColor: NSColor.white])
+                                 withAttributes: [.font: f1, .foregroundColor: ink])
         if let badge = s.badge {
             let bw = (badge as NSString).size(withAttributes: [.font: f2]).width + s.font * 0.7, bh = line2 + 4
             let br = NSRect(x: body.maxX - padX * 0.6 - bw, y: body.maxY - padY * 0.7 - bh, width: bw, height: bh)
@@ -342,18 +450,41 @@ final class PileScene: SKScene {
         let y = area.maxY + H + 10
         let box = CGRect(x: x - W / 2 - 4, y: y - H / 2 - 4, width: W + 8, height: H + 8)
         if blocks.contains(where: { $0.frame.intersects(box) }) { return false }   // 나올 자리가 막혔으면 다음 프레임에
+        addChild(makeNode(s, at: CGPoint(x: x, y: y), rng: &r))
+        return true
+    }
+
+    func makeNode(_ s: Spec, at p: CGPoint, rng r: inout Rng) -> SKSpriteNode {
+        let W = s.size.width, H = s.size.height
         let n = SKSpriteNode(texture: texture(s), size: CGSize(width: W + shadowPad * 2, height: H + shadowPad * 2))
         n.name = s.key
         n.userData = ["raw": s.raw]
-        n.position = CGPoint(x: x, y: y)
+        n.position = p
         n.zRotation = (r.next() - 0.5) * (s.primary ? 0.3 : 1.2)
         let body = SKPhysicsBody(rectangleOf: CGSize(width: W, height: H))
         body.friction = 0.7; body.restitution = 0.05; body.linearDamping = 0.15; body.angularDamping = 0.4; body.density = 1
         n.physicsBody = body
         // 할 일 카드는 30도 넘게 안 넘어간다 — 뒤집히면 못 읽으니까
         if s.primary { n.constraints = [SKConstraint.zRotation(SKRange(lowerLimit: -0.5, upperLimit: 0.5))] }
-        addChild(n)
-        return true
+        return n
+    }
+
+    /// 한 번에 내려오기 — 전부 화면 위에 줄지어 놓고 같이 떨어뜨린다 (오래된 것이 아래 줄 → 바닥에 깔린다).
+    /// 메아리는 화면 면적의 절반을 넘으면 뺀다 (할 일 카드는 다 넣는다).
+    func dropAll(_ specs: [Spec]) {
+        var x = area.minX + 4, y = area.maxY + 40, rowH: CGFloat = 0
+        var used: CGFloat = 0
+        let budget = area.width * area.height * 0.5
+        for s in specs {
+            let a = s.size.width * s.size.height
+            if !s.primary && used + a > budget { skipped += 1; continue }
+            used += a
+            var r = Rng(s.key)
+            let W = s.size.width + 8 + r.next() * 24, H = s.size.height + 8
+            if x + W > area.maxX { x = area.minX + 4 + r.next() * 30; y += rowH; rowH = 0 }
+            addChild(makeNode(s, at: CGPoint(x: x + W / 2, y: y + H / 2), rng: &r))
+            x += W; rowH = max(rowH, H)
+        }
     }
 
     override func update(_ now: TimeInterval) {
@@ -410,12 +541,10 @@ final class PileController {
     init(view: SKView, area: CGRect) { self.view = view; self.area = area }
 
     func specs(_ items: [Item], k: CGFloat) -> [Spec] {
-        let freq = Dictionary(grouping: items, by: { $0.project ?? "" }).sorted { $0.value.count > $1.value.count }
-        var cmap: [String: NSColor] = [:]
-        for (i, kv) in freq.enumerated() { cmap[kv.key] = palette[i % palette.count] }
+        let cmap = projectColors(items.map { $0.project ?? "미분류" })
         // 오래된 것부터 떨어져 아래에, 메아리는 본 카드 뒤에
         return items.sorted { $0.origin < $1.origin }.flatMap { it in
-            (0...echoes(it)).map { makeSpec(it, echo: $0, k: k, color: cmap[it.project ?? ""] ?? palette[0]) }
+            (0...echoes(it)).map { makeSpec(it, echo: $0, k: k, color: cmap[it.project ?? "미분류"] ?? .gray) }
         }
     }
 
@@ -432,7 +561,9 @@ final class PileController {
             day = today
             let s = PileScene(size: view.bounds.size)
             s.area = area; s.k = scale(items); s.setup()
-            s.queue = specs(items, k: s.k)
+            let all = specs(items, k: s.k)
+            s.dropAll(all)                       // 처음 · 새로고침은 한 번에 내려온다
+            keys = all.map { $0.key }            // 빠진 메아리도 "있는 것"으로 — 나중에 하나씩 떨어지지 않게
             s.onSettled = { [weak self] in
                 guard let self = self else { return }
                 self.view.isPaused = true
@@ -446,7 +577,6 @@ final class PileController {
             }
             s.onWake = { [weak self] in self?.view.isPaused = false }
             configure(s)
-            keys = s.queue.map { $0.key }
             scene = s
             view.isPaused = false
             view.presentScene(s)
@@ -580,17 +710,71 @@ final class DueForm: NSObject {
     }
 }
 
+/// Jira 연결 — 사이트 · 이메일 · API 토큰. 확인되면 토큰은 키체인에, 나머지는 설정에.
+final class JiraForm: NSObject {
+    let panel = FormPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 230), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    let site = NSTextField(), email = NSTextField(), token = NSSecureTextField()
+    let err = NSTextField(labelWithString: "")
+    var onDone: () -> Void = {}
+
+    override init() {
+        super.init()
+        panel.title = "Jira 연결"; panel.level = .floating
+        let pr = loadPrefs()
+        site.stringValue = pr.jiraSite ?? "millietown.atlassian.net"
+        email.stringValue = pr.jiraEmail ?? ""; email.placeholderString = "Atlassian 로그인 이메일"
+        token.placeholderString = "API 토큰"
+        err.textColor = .secondaryLabelColor
+        err.stringValue = "토큰 만들기: id.atlassian.com → 보안 → API 토큰"
+        let link = NSButton(title: "토큰 만들러 가기", target: self, action: #selector(openTokenPage)); link.bezelStyle = .inline
+        let ok = NSButton(title: "연결", target: self, action: #selector(submit)); ok.keyEquivalent = "\r"
+        let grid = NSGridView(views: [[label("사이트"), site], [label("이메일"), email], [label("API 토큰"), token],
+                                      [NSView(), err], [link, ok]])
+        grid.column(at: 0).xPlacement = .trailing; grid.rowSpacing = 10; grid.columnSpacing = 12
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView = NSView(); panel.contentView!.addSubview(grid)
+        NSLayoutConstraint.activate([grid.topAnchor.constraint(equalTo: panel.contentView!.topAnchor, constant: 20),
+                                     grid.leadingAnchor.constraint(equalTo: panel.contentView!.leadingAnchor, constant: 20),
+                                     site.widthAnchor.constraint(equalToConstant: 300)])
+    }
+    func show() { panel.center(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil) }
+    @objc func openTokenPage() { NSWorkspace.shared.open(URL(string: "https://id.atlassian.com/manage-profile/security/api-tokens")!) }
+
+    @objc func submit() {
+        let st = site.stringValue.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "https://", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let em = email.stringValue.trimmingCharacters(in: .whitespaces), tk = token.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !st.isEmpty, !em.isEmpty, !tk.isEmpty, let req = jiraRequest(site: st, email: em, token: tk, path: "/rest/api/3/myself", query: []) else {
+            err.textColor = .systemRed; err.stringValue = "세 칸을 다 채워 주세요."; return
+        }
+        err.textColor = .secondaryLabelColor; err.stringValue = "확인 중…"
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let name = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["displayName"] as? String
+            DispatchQueue.main.async {
+                guard code == 200 else { self.err.textColor = .systemRed; self.err.stringValue = "연결 실패 (응답 \(code)) — 이메일 · 토큰을 확인해 주세요."; return }
+                keychainSet(em, tk)
+                var pr = loadPrefs(); pr.jiraSite = st; pr.jiraEmail = em; savePrefs(pr)
+                self.err.textColor = .systemGreen; self.err.stringValue = "연결됨 — \(name ?? em)"
+                self.onDone()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.panel.close() }
+            }
+        }.resume()
+    }
+}
+
 // ── Claude 열기 ─────────────────────────────────────────────
 /// `cd <dir> && claude --model sonnet "<prompt>"` 스크립트. 프롬프트는 heredoc 으로 넣어 따옴표가 안 깨진다.
-func writeClaudeScript(dir: String, prompt: String) -> String {
+func writeClaudeScript(dir: String, prompt: String, model: String = "sonnet", flags: [String] = []) -> String {
     let script = home + "/.phantom-obsidian/state/todo-claude-\(Int(Date().timeIntervalSince1970)).sh"
     let body = "#!/bin/zsh -l\ncd '\(dir.replacingOccurrences(of: "'", with: "'\\''"))' || exit 1\nrm -f \"$0\"\n"
-        + "PROMPT=$(cat <<'__TODO_PROMPT__'\n\(prompt)\n__TODO_PROMPT__\n)\nexec claude --model sonnet \"$PROMPT\"\n"
+        + "PROMPT=$(cat <<'__TODO_PROMPT__'\n\(prompt)\n__TODO_PROMPT__\n)\n# 프롬프트를 먼저 — --allowedTools 는 뒤의 인자를 다 목록으로 먹는다\nexec claude \"$PROMPT\" --model \(model) " + flags.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ") + "\n"
     try? FileManager.default.createDirectory(atPath: (script as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
     try? body.write(toFile: script, atomically: true, encoding: .utf8)
     try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script)
     return script
 }
+
+let vaultRecord = home + "/.phantom-obsidian/scripts/vault_record.py"
 
 /// "AI 로 수정하기" 첫 메시지 — vault 에서 Ghostty 로 연 claude 에게 보낸다. 수정사항은 다음 답변으로 준다.
 func editPrompt(_ it: Item) -> String {
@@ -598,7 +782,7 @@ func editPrompt(_ it: Item) -> String {
     "\(it.text)" 항목 수정할거야. 수정사항은 다음 답변에서 줄게.
     TODO 파일: \(latestTodoFile() ?? "-")
     원래 줄: \(it.raw)
-    (줄 고치기 · 완료 · 버리기는 이 줄만 고친다. 프로젝트로 바꾸기 · 쪼개기는 vault-record 규칙대로 — 필요한 값은 나한테 묻고, 고치기 전에 바뀔 내용을 먼저 보여 줘)
+    (줄 고치기 · 완료 · 버리기는 이 줄만 고친다. 프로젝트로 바꾸기 · 쪼개기는 vault-record 규칙대로 `python3 \(vaultRecord) …` 로 — 필요한 값은 나한테 묻고, 고치기 전에 바뀔 내용을 먼저 보여 줘)
     """
 }
 
@@ -612,6 +796,16 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var items: [Item] = []
     var forms: [NSObject] = []     // 열린 창을 붙잡아 둔다
     var stamp = ""                 // TODO 파일 이름 + 수정 시각 — 바뀌면 바로 다시 읽는다
+    var jiraTimer: Timer?
+    var jiraNote = ""              // 마지막 Jira 가져오기 결과 (메뉴에 보인다)
+
+    func allItems() -> [Item] { loadItems() + loadJiraCache() }
+
+    /// Jira 를 가져와 바뀌었으면 블록에 반영 (10분마다 · 새로고침 · 연결 직후).
+    func pullJira() {
+        guard loadPrefs().jiraEmail != nil else { return }
+        fetchJira { [weak self] ok, msg in self?.jiraNote = msg; if ok { self?.refresh() } }
+    }
 
     func applicationDidFinishLaunching(_ n: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -622,6 +816,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 3초마다 TODO 파일이 바뀌었는지 본다 (Claude · 옵시디언에서 고치면 바로 블록에 반영)
         let tm = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.refreshIfChanged() }
         RunLoop.main.add(tm, forMode: .common); timer = tm
+        let jt = Timer(timeInterval: 600, repeats: true) { [weak self] _ in self?.pullJira() }
+        RunLoop.main.add(jt, forMode: .common); jiraTimer = jt
+        pullJira()
         // 마우스가 블록 위에 있을 때만 창이 클릭을 받는다 — 나머지는 바탕화면으로 통과
         let hv = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.updateHover() }
         RunLoop.main.add(hv, forMode: .common); hover = hv
@@ -650,7 +847,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func refreshIfChanged() { let s = fileStamp(); if s != stamp { plog("TODO 파일 바뀜 → 다시 읽음"); refresh() } }
 
     /// 새로고침 — TODO 를 다시 읽고 블록을 처음부터 다시 떨어뜨린다 (멈췄거나 꼬였을 때).
-    @objc func reload() { plog("새로고침"); rebuild() }
+    @objc func reload() { plog("새로고침"); rebuild(); pullJira() }
 
     func rebuild() {
         window?.orderOut(nil)
@@ -676,24 +873,41 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func refresh() {
         stamp = fileStamp()
-        items = loadItems()
+        items = allItems()
         pile?.sync(items) { s in s.onMenu = { [weak self] raw, e in self?.contextMenu(raw, e) } }
         let late = items.filter { ($0.late ?? 0) > 0 }.count
-        status.button?.title = "TODO \(items.count)" + (late > 0 ? " 🔴\(late)" : "")
+        let jira = items.filter { $0.jiraKey != nil }.count
+        status.button?.title = "TODO \(items.count - jira)" + (jira > 0 ? " · Jira \(jira)" : "") + (late > 0 ? " 🔴\(late)" : "")
     }
 
     // ── 메뉴바: 켜고 끄기 · 할 일 추가 · 할 일 목록 ──
     func menuNeedsUpdate(_ menu: NSMenu) {
-        items = loadItems()
+        items = allItems()
         menu.removeAllItems()
         let vis = menu.addItem(withTitle: "바탕화면에 블록 보이기", action: #selector(toggleVisible), keyEquivalent: "")
         vis.target = self; vis.state = loadPrefs().visible ? .on : .off
         menu.addItem(withTitle: "할 일 추가…", action: #selector(addTodo), keyEquivalent: "n").target = self
         menu.addItem(withTitle: "새로고침", action: #selector(reload), keyEquivalent: "r").target = self
+        let pr = loadPrefs()
+        menu.addItem(withTitle: pr.jiraEmail == nil ? "Jira 연결…" : "Jira 연결 바꾸기…" + (jiraNote.isEmpty ? "" : "  (\(jiraNote))"),
+                     action: #selector(connectJira), keyEquivalent: "").target = self
+        if pr.jiraEmail != nil {
+            // Jira 상태별 켜고 끄기 (체크된 상태만 블록으로)
+            let all = jiraAll()
+            let counts = Dictionary(grouping: all, by: { $0.status ?? "-" }).mapValues { $0.count }
+            let show = Set(pr.jiraShow ?? jiraShowDefault)
+            let sm = NSMenu()
+            for (st, n) in counts.sorted(by: { $0.value > $1.value }) {
+                let mi = sm.addItem(withTitle: "\(st)  (\(n))", action: #selector(toggleJiraStatus(_:)), keyEquivalent: "")
+                mi.target = self; mi.representedObject = st; mi.state = show.contains(st) ? .on : .off
+            }
+            let jm = NSMenuItem(title: "Jira 상태 — \(all.filter { show.contains($0.status ?? "") }.count) / \(all.count)건", action: nil, keyEquivalent: "")
+            jm.submenu = sm; menu.addItem(jm)
+        }
         menu.addItem(.separator())
         let sorted = items.sorted { pressure($0) > pressure($1) }
         for it in sorted.prefix(30) {
-            let mark = it.late.map { $0 > 0 ? "🔴 D+\($0)" : ($0 == 0 ? "🟠 오늘" : "📅 \(-$0)일") } ?? "⚪︎ \(it.age)일"
+            let mark = (it.jiraKey != nil ? "🎫 " : "") + (it.late.map { $0 > 0 ? "🔴 D+\($0)" : ($0 == 0 ? "🟠 오늘" : "📅 \(-$0)일") } ?? "⚪︎ \(it.age)일")
             let mi = NSMenuItem(title: "\(mark)  " + (it.text.count > 46 ? String(it.text.prefix(46)) + "…" : it.text), action: nil, keyEquivalent: "")
             mi.toolTip = (it.project.map { "[\($0)] " } ?? "") + it.text
             mi.submenu = actions(for: it)
@@ -715,6 +929,14 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         head.isEnabled = false; m.addItem(head)
         m.addItem(.separator())
         let proj = it.project ?? "미분류"
+        if it.jiraKey != nil {
+            add("Jira 에서 열기", #selector(openJira(_:)))
+            if let d = loadPrefs().dirs[proj] { add("Claude 로 해결하기 — \((d as NSString).lastPathComponent)", #selector(solve(_:))) }
+            else { add("Claude 로 해결하기 — 코드 폴더 고르기…", #selector(solve(_:))) }
+            m.addItem(.separator())
+            add("`\(proj)` 코드 폴더 바꾸기…", #selector(pickDir(_:)))
+            return m
+        }
         if let d = loadPrefs().dirs[proj] { add("Claude 로 해결하기 — \((d as NSString).lastPathComponent)", #selector(solve(_:))) }
         else { add("Claude 로 해결하기 — 코드 폴더 고르기…", #selector(solve(_:))) }
         add("AI 로 수정하기", #selector(editWithAI(_:)))
@@ -741,6 +963,20 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let f = DueForm(item: it); f.onDone = { [weak self] in self?.refresh() }
         forms.append(f); f.show()
     }
+    @objc func openJira(_ s: NSMenuItem) {
+        guard let key = item(s)?.jiraKey, let u = URL(string: "https://\(loadPrefs().jiraSite ?? "millietown.atlassian.net")/browse/\(key)") else { return }
+        NSWorkspace.shared.open(u)
+    }
+    @objc func toggleJiraStatus(_ s: NSMenuItem) {
+        guard let st = s.representedObject as? String else { return }
+        var pr = loadPrefs(); var show = pr.jiraShow ?? jiraShowDefault
+        if let i = show.firstIndex(of: st) { show.remove(at: i) } else { show.append(st) }
+        pr.jiraShow = show; savePrefs(pr); refresh()
+    }
+    @objc func connectJira() {
+        let f = JiraForm(); f.onDone = { [weak self] in self?.pullJira() }
+        forms.append(f); f.show()
+    }
     @objc func addTodo() {
         let f = AddForm(); f.onDone = { [weak self] in self?.refresh() }
         forms.append(f); f.show()
@@ -760,10 +996,38 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func pickDir(_ s: NSMenuItem) { if let it = item(s) { _ = chooseDir(it.project ?? "미분류") } }
 
     /// 그 프로젝트 코드 폴더에서 Ghostty(없으면 터미널)로 Claude 를 열고, 할 일을 첫 메시지로 넘긴다.
+    /// 해결할 모델 고르기 — 엔터 = Opus, Esc = 취소.
+    func pickModel(_ it: Item) -> String? {
+        let a = NSAlert()
+        a.messageText = "어떤 모델로 해결할까요?"
+        a.informativeText = it.text.count > 120 ? String(it.text.prefix(120)) + "…" : it.text
+        for t in ["Opus", "Sonnet", "Haiku", "취소"] { a.addButton(withTitle: t) }   // 첫 버튼(Opus)이 엔터
+        a.buttons.last?.keyEquivalent = "\u{1b}"
+        NSApp.activate(ignoringOtherApps: true)
+        switch a.runModal() {
+        case .alertFirstButtonReturn: return "opus"
+        case .alertSecondButtonReturn: return "sonnet"
+        case .alertThirdButtonReturn: return "haiku"
+        default: return nil
+        }
+    }
+
     @objc func solve(_ s: NSMenuItem) {
         guard let it = item(s) else { return }
         let proj = it.project ?? "미분류"
-        guard let dir = loadPrefs().dirs[proj] ?? chooseDir(proj) else { return }
+        guard let dir = loadPrefs().dirs[proj] ?? chooseDir(proj), let model = pickModel(it) else { return }
+        if let key = it.jiraKey {
+            let url = "https://\(loadPrefs().jiraSite ?? "millietown.atlassian.net")/browse/\(key)"
+            let jp = """
+            Jira 이슈를 해결하자.
+            이슈: \(it.text)
+            링크: \(url)
+            상태: \(it.status ?? "-") · \(meta(it))
+            먼저 이슈 내용을 확인하고(Atlassian 연결이 있으면 읽어서), 무엇이 끝나야 완료인지 한 줄로 정하고 시작해.
+            """
+            openClaude(in: dir, prompt: jp, model: model)
+            return
+        }
         let prompt = """
         vault TODO 를 해결하자.
         할 일: \(it.text)
@@ -771,7 +1035,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         TODO 파일의 원래 줄: \(it.raw)
         먼저 무엇이 끝나야 완료인지 한 줄로 정하고 시작해. 끝나면 TODO 줄을 [x] 로 바꿔도 되는지 물어봐.
         """
-        openClaude(in: dir, prompt: prompt)
+        openClaude(in: dir, prompt: prompt, model: model)
     }
 
     /// 이 할 일 줄을 고치러 vault 에서 Claude 를 연다 (Ghostty 보통 창, sonnet). 수정사항은 다음 답변으로 준다.
@@ -781,8 +1045,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// 그 폴더에서 Ghostty(없으면 터미널)로 claude 를 열고 prompt 를 첫 메시지로 넘긴다.
-    func openClaude(in dir: String, prompt: String) {
-        let script = writeClaudeScript(dir: dir, prompt: prompt)
+    func openClaude(in dir: String, prompt: String, model: String = "sonnet", flags: [String] = []) {
+        let script = writeClaudeScript(dir: dir, prompt: prompt, model: model, flags: flags)
         let ghostty = URL(fileURLWithPath: "/Applications/Ghostty.app")
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -812,6 +1076,20 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else { NSWorkspace.shared.open(URL(fileURLWithPath: f)) }
     }
     @objc func quit() { NSApp.terminate(nil) }
+}
+
+// 시험: `todo-pile --jira-parse 응답.json` — Jira 응답을 블록 항목으로 바꿔 보고 출력
+if let i = CommandLine.arguments.firstIndex(of: "--jira-parse"), i + 1 < CommandLine.arguments.count,
+   let d = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]) {
+    for it in jiraItems(d, site: "x") ?? [] { print(it.raw, "|", it.project ?? "-", "|", it.text, "|", it.status ?? "-", "|", it.importance ?? "-", "|", it.due.map { iso.string(from: $0) } ?? "-", "|", "\(it.age)일", "| 메아리", echoes(it)) }
+    exit(0)
+}
+
+// 시험: `todo-pile --edit-script N` — N번째 할 일의 "AI 로 수정하기" 실행 스크립트만 써 보고 경로를 출력 (창 안 띄움)
+if let i = CommandLine.arguments.firstIndex(of: "--edit-script"), i + 1 < CommandLine.arguments.count,
+   let n = Int(CommandLine.arguments[i + 1]), loadItems().indices.contains(n) {
+    print(writeClaudeScript(dir: vaultPath(), prompt: editPrompt(loadItems()[n])))
+    exit(0)
 }
 
 let app = NSApplication.shared
