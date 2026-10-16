@@ -245,6 +245,7 @@ func jiraAll() -> [Item] {
 }
 /// 고른 상태만.
 func loadJiraCache() -> [Item] {
+    if env["PILE_NO_JIRA"] != nil { return [] }          // 미리보기용 — Jira 를 안 읽는다(키체인 묻지 않게)
     let show = Set(loadPrefs().jiraShow ?? jiraShowDefault)
     return jiraAll().filter { show.contains($0.status ?? "") }
 }
@@ -310,7 +311,8 @@ struct Spec {
     let sub: String?
     let font: CGFloat
     let textW: CGFloat        // 글자 줄바꿈 폭
-    let badge: String?        // "오늘" · "D+3"
+    let badge: String?        // "3일 지남" · "오늘까지" · "내일까지" · "2일 남음"
+    var badgeTone = 0         // 1 지남(빨강) · 2 오늘·내일(호박) · 3 곧(옅게)
     var primary: Bool { title != nil }
 }
 
@@ -337,19 +339,29 @@ func makeSpec(_ it: Item, echo: Int, k: CGFloat, color: NSColor) -> Spec {
     let f = min(24, max(12, 11 + p * 0.85)) * k
     let (f1, f2) = fonts(f)
     var subParts = [it.project ?? "미분류"] + (it.status.map { [$0] } ?? []) + ["\(it.age)일째"]
-    if it.due == nil { subParts.append("마감 없음") } else if let late = it.late, late < 0 { subParts.append("마감 \(-late)일 남음") }
+    if it.due == nil { subParts.append("마감 없음") } else if let late = it.late, late < -3 { subParts.append("마감 \(-late)일 남음") }   // 3일 안쪽은 배지가 말한다
     if let i = it.importance { subParts.append("중요도 \(i)") }
     if it.postponed > 0 { subParts.append("\(it.postponed)번 미룸") }
     let sub = subParts.joined(separator: " · ")
-    let badge: String? = it.late.flatMap { $0 > 0 ? "D+\($0)" : ($0 == 0 ? "오늘" : nil) }
+    // 마감 배지 — 숫자 기호(D+3) 대신 말로. 지남은 빨강, 오늘 · 내일은 호박, 2~3일 남음은 옅게
+    var badge: String? = nil, tone = 0
+    if let late = it.late {
+        switch late {
+        case 1...: badge = "\(late)일 지남"; tone = 1
+        case 0: badge = "오늘까지"; tone = 2
+        case -1: badge = "내일까지"; tone = 2
+        case -3 ... -2: badge = "\(-late)일 남음"; tone = 3
+        default: break
+        }
+    }
     let padX = f * 0.9, padY = f * 0.55
-    let badgeW: CGFloat = badge == nil ? 0 : (badge! as NSString).size(withAttributes: [.font: f2]).width + f * 1.2
+    let badgeW: CGFloat = badge == nil ? 0 : (badge! as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: f2.pointSize, weight: .semibold)]).width + f * 1.6
     let ts = titleSize(it.text, f1, 420 * k)
     let subW = (sub as NSString).size(withAttributes: [.font: f2]).width
     let textW = max(ts.width, subW)
     let h = ts.height + (f2.ascender - f2.descender) + f * 0.3 + padY * 2
     return Spec(key: key, raw: it.raw, size: CGSize(width: ceil(textW + padX * 2 + badgeW), height: ceil(h)), color: color,
-                title: it.text, sub: sub, font: f, textW: max(ts.width, 1), badge: badge)
+                title: it.text, sub: sub, font: f, textW: max(ts.width, 1), badge: badge, badgeTone: tone)
 }
 
 /// 도구 블록 — 늘 쌓여 있는 "＋ 할 일 쓰기" · "🎙 회의하기". 클릭하면 바로 그 창이 뜬다.
@@ -396,12 +408,31 @@ func texture(_ s: Spec) -> SKTexture {
         (title as NSString).draw(in: NSRect(x: body.minX + padX, y: body.minY + padY + line2 + s.font * 0.3, width: s.textW + 1, height: ts.height + 2),
                                  withAttributes: [.font: f1, .foregroundColor: ink])
         if let badge = s.badge {
-            let bw = (badge as NSString).size(withAttributes: [.font: f2]).width + s.font * 0.7, bh = line2 + 4
-            let br = NSRect(x: body.maxX - padX * 0.6 - bw, y: body.maxY - padY * 0.7 - bh, width: bw, height: bh)
-            alert.setFill(); NSBezierPath(roundedRect: br, xRadius: bh / 2, yRadius: bh / 2).fill()
-            (badge as NSString).draw(at: NSPoint(x: br.minX + s.font * 0.35, y: br.minY + 2),
-                                     withAttributes: [.font: NSFont.systemFont(ofSize: f2.pointSize, weight: .bold), .foregroundColor: NSColor.white])
-            alert.setStroke(); let o = NSBezierPath(roundedRect: body.insetBy(dx: 1, dy: 1), xRadius: radius, yRadius: radius); o.lineWidth = 2; o.stroke()
+            // 오른쪽 위 작은 알약 + (지남 · 오늘 · 내일) 왼쪽 가장자리 색 띠. 카드 전체 테두리는 두르지 않는다
+            let amber = NSColor(srgbRed: 0.93, green: 0.74, blue: 0.42, alpha: 1)
+            let soft = NSColor(srgbRed: 0.93, green: 0.52, blue: 0.50, alpha: 1)
+            let bf = NSFont.systemFont(ofSize: f2.pointSize, weight: .semibold)
+            let tw = (badge as NSString).size(withAttributes: [.font: bf]).width
+            let bh = ceil(line2 + s.font * 0.25), bw = ceil(tw + bh * 0.9)
+            let br = NSRect(x: body.maxX - padX * 0.5 - bw, y: body.maxY - padY * 0.55 - bh, width: bw, height: bh)
+            let pill = NSBezierPath(roundedRect: br, xRadius: bh / 2, yRadius: bh / 2)
+            let (fill, text): (NSColor, NSColor) = {
+                switch s.badgeTone {
+                case 1: return (NSColor(white: 0, alpha: 0.28), soft)
+                case 2: return (NSColor(white: 0, alpha: 0.28), amber)
+                default: return (NSColor(white: 0, alpha: 0.18), ink.withAlphaComponent(0.75))
+                }
+            }()
+            fill.setFill(); pill.fill()
+            (badge as NSString).draw(at: NSPoint(x: br.midX - tw / 2, y: br.midY - (bf.ascender - bf.descender) / 2),
+                                     withAttributes: [.font: bf, .foregroundColor: text])
+            if s.badgeTone == 1 || s.badgeTone == 2 {
+                NSGraphicsContext.saveGraphicsState()
+                path.addClip()
+                (s.badgeTone == 1 ? soft : amber).withAlphaComponent(0.85).setFill()
+                NSRect(x: body.minX, y: body.minY, width: max(3, s.font * 0.18), height: body.height).fill()
+                NSGraphicsContext.restoreGraphicsState()
+            }
         }
     }
     NSGraphicsContext.restoreGraphicsState()
@@ -1025,7 +1056,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Jira 를 가져와 바뀌었으면 블록에 반영 (10분마다 · 새로고침 · 연결 직후).
     func pullJira() {
-        guard loadPrefs().jiraEmail != nil else { return }
+        guard loadPrefs().jiraEmail != nil, env["PILE_NO_JIRA"] == nil else { return }
         fetchJira { [weak self] ok, msg in self?.jiraNote = msg; if ok { self?.refresh() } }
     }
 
@@ -1146,7 +1177,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         let sorted = items.sorted { pressure($0) > pressure($1) }
         for it in sorted.prefix(30) {
-            let mark = (it.jiraKey != nil ? "🎫 " : "") + (it.late.map { $0 > 0 ? "🔴 D+\($0)" : ($0 == 0 ? "🟠 오늘" : "📅 \(-$0)일") } ?? "⚪︎ \(it.age)일")
+            let mark = (it.jiraKey != nil ? "🎫 " : "") + (it.late.map { $0 > 0 ? "🔴 \($0)일 지남" : ($0 == 0 ? "🟠 오늘까지" : ($0 == -1 ? "🟠 내일까지" : "📅 \(-$0)일 남음")) } ?? "⚪︎ \(it.age)일째")
             let mi = NSMenuItem(title: "\(mark)  " + (it.text.count > 46 ? String(it.text.prefix(46)) + "…" : it.text), action: nil, keyEquivalent: "")
             mi.toolTip = (it.project.map { "[\($0)] " } ?? "") + it.text
             mi.submenu = actions(for: it)
