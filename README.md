@@ -209,6 +209,8 @@ AI 가 작업 · 마일스톤 · 결정을 끝냈다고 보고하는 **같은 �
 
 `para/collect.py` — AI 도구 대화 기록에서 **끝난 사건**만 골라 `<para_inbox>` 에 쌓는다. 자동화 세션(`claude -p` · `codex exec`)은 건너뛴다.
 
+Claude Code 세션이 시작될 때 훅이 3시간에 한 번 뒤에서 LLM 없이 줍고(`--no-llm`), 인박스에 3건 넘게 쌓이면 AI 가 **"분류할 게 N건 쌓였는데 분류할까요?"** 하고 묻는다. 승낙하면 그때 `classify.py` 를 돌린다 — 분류(LLM)는 묻지 않고 돌리지 않는다.
+
 ```bash
 python3 para/collect.py --dry-run     # 결과만 출력
 python3 para/collect.py               # 적립 (최근 24시간, 최대 20세션)

@@ -12,6 +12,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
 from millie_home import load_config, millie_home      # noqa: E402
@@ -27,6 +28,34 @@ def bootstrap():
     subprocess.run([sys.executable, str(script), "--fast"], capture_output=True, timeout=8)
     subprocess.Popen([sys.executable, str(script)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+PARA_EVERY = 3 * 3600      # 대화 줍기는 3시간에 한 번 (LLM 없이, 1~2초)
+PARA_ASK_AT = 3            # 인박스에 이만큼 쌓이면 사용자에게 분류할지 묻는다
+
+
+def para_pending():
+    """뒤에서 AI 대화를 줍고(LLM 없음 — 끝 신호 있는 세션만), PARA 인박스에 쌓인 건수와 경로를 돌려준다.
+    분류(LLM)는 여기서 돌리지 않는다 — 사용자에게 물어보고 승낙하면 그때."""
+    collect = HOME / "para" / "collect.py"
+    st_path = HOME / "state" / "para-nudge.json"
+    try:
+        st = json.loads(st_path.read_text(encoding="utf-8"))
+    except Exception:
+        st = {}
+    now = time.time()
+    if collect.is_file() and now - st.get("collected", 0) > PARA_EVERY:
+        subprocess.Popen([sys.executable, str(collect), "--no-llm"], cwd=str(HOME), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        st["collected"] = now
+        st_path.parent.mkdir(parents=True, exist_ok=True)
+        st_path.write_text(json.dumps(st), encoding="utf-8")
+    cfg = load_config(__file__)
+    inbox = pathlib.Path(cfg["vault"]).expanduser() / cfg.get("paths", {}).get("para_inbox", "📥 PARA 인박스.md")
+    try:
+        return inbox.read_text(encoding="utf-8").count("<!-- para-id:"), inbox
+    except Exception:
+        return 0, inbox
 
 
 def lint():
@@ -94,6 +123,16 @@ def main():
               "- 영역·자료: `... area --name <영역> --text ...` / `... resource --topic <주제> --text ...`\n"
               "- 현재 프로젝트: %s / 영역: %s / 자료 주제: %s\n기록 후 한 줄로만 보고한다.\n"
               % (record, names, areas_s, topics_s))
+        try:
+            n, inbox = para_pending()
+        except Exception:
+            n, inbox = 0, None
+        if n >= PARA_ASK_AT and (HOME / "para" / "classify.py").is_file():
+            print("## 분류 대기 (%d건)\n\n"
+                  "AI 대화에서 주운 끝난 일 %d건이 PARA 인박스(`%s`)에 쌓여 있다. 지금 분류하지 않는다 — 먼저 묻는다.\n"
+                  "이번 세션 첫 답 끝에 한 줄로: `분류할 게 %d건 쌓였는데 분류할까요?` (그 답에 이미 다른 질문이 있으면 다음 답에서).\n"
+                  "승낙하면 `python3 %s --no-slack` 을 돌리고 어디로 갔는지 한 줄로 알린다. 거절하면 이 세션에선 다시 묻지 않는다.\n"
+                  % (n, n, inbox, n, HOME / "para" / "classify.py"))
         if not bad:
             return
 
