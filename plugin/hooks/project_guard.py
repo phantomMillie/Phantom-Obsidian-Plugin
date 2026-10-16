@@ -90,7 +90,7 @@ def project_names():
 
 def guess_project(prompt, cwd, names, sp, prev, vault):
     """(프로젝트, 근거) 또는 (None, None). 프롬프트에 이름 > 같은 대화에서 앞서 정함 > 대화 폴더."""
-    for n in sorted(names, key=len, reverse=True):          # 긴 이름 먼저 — "뷰어 통합 2차" 가 "뷰어" 보다 앞
+    for n in sorted(names, key=len, reverse=True):          # 긴 이름 먼저 — "결제 개선 2차" 가 "결제" 보다 앞
         if len(n) >= 2 and n in prompt:
             return n, "프롬프트에 이름"
     if prev in names:
