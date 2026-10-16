@@ -53,9 +53,11 @@ def para_pending():
     cfg = load_config(__file__)
     inbox = pathlib.Path(cfg["vault"]).expanduser() / cfg.get("paths", {}).get("para_inbox", "📥 PARA 인박스.md")
     try:
-        return inbox.read_text(encoding="utf-8").count("<!-- para-id:"), inbox
+        text = inbox.read_text(encoding="utf-8")
     except Exception:
-        return 0, inbox
+        return 0, inbox, []
+    titles = [ln[3:].strip() for ln in text.splitlines() if ln.startswith("## ")]
+    return text.count("<!-- para-id:"), inbox, titles
 
 
 def lint():
@@ -124,15 +126,18 @@ def main():
               "- 현재 프로젝트: %s / 영역: %s / 자료 주제: %s\n기록 후 한 줄로만 보고한다.\n"
               % (record, names, areas_s, topics_s))
         try:
-            n, inbox = para_pending()
+            n, inbox, titles = para_pending()
         except Exception:
-            n, inbox = 0, None
+            n, inbox, titles = 0, None, []
         if n >= PARA_ASK_AT and (HOME / "para" / "classify.py").is_file():
-            print("## 분류 대기 (%d건)\n\n"
-                  "AI 대화에서 주운 끝난 일 %d건이 PARA 인박스(`%s`)에 쌓여 있다. 지금 분류하지 않는다 — 먼저 묻는다.\n"
-                  "이번 세션 첫 답 끝에 한 줄로: `분류할 게 %d건 쌓였는데 분류할까요?` (그 답에 이미 다른 질문이 있으면 다음 답에서).\n"
-                  "승낙하면 `python3 %s --no-slack` 을 돌리고 어디로 갔는지 한 줄로 알린다. 거절하면 이 세션에선 다시 묻지 않는다.\n"
-                  % (n, n, inbox, n, HOME / "para" / "classify.py"))
+            ex = ", ".join("「%s」" % t[:30] for t in titles[:3])
+            print("## vault 에 안 들어간 일 (%d건)\n\n"
+                  "지난 AI 대화에서 끝난 일 %d건을 주워 PARA 인박스(`%s`)에 모아 뒀다. 아직 vault 의 제자리(프로젝트 개발일지 · 영역 · 자료)에는 안 들어갔다.\n"
+                  "지금 넣지 않는다 — 먼저 묻는다. 이번 세션 첫 답 끝에, 무엇인지 알 수 있게 예시를 붙여 한 줄로:\n"
+                  "`지난 대화에서 끝난 일 %d건이 아직 vault 에 정리 안 됐어요 — 예: %s. 프로젝트 개발일지 · 영역 · 자료 중 맞는 곳에 나눠 넣을까요?`\n"
+                  "(그 답에 이미 다른 질문이 있으면 다음 답에서.) 승낙하면 `python3 %s --no-slack` 을 돌리고 어디로 몇 건 갔는지 한 줄로 알린다. "
+                  "거절하면 이 세션에선 다시 묻지 않는다.\n"
+                  % (n, n, inbox, n, ex or "(제목 없음)", HOME / "para" / "classify.py"))
         if not bad:
             return
 
