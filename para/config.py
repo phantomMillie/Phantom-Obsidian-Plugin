@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# 설정 읽기 — ~/.phantom-obsidian/config.json (gitignore, 이 PC 에만 있다).
+# 설정 읽기 — ~/.millie-obsidian/config.json (gitignore, 이 PC 에만 있다).
 # vault 별 경로 · 이름 · 로컬 비밀 파일 위치는 전부 설정에 둔다. 프레임워크 코드 · 스킬에는 키 이름만 쓴다.
 # 구조는 config.example.json 참고. 없는 키는 아래 기본값(일반 PARA 이름)을 쓴다.
 import json, pathlib, sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent           # ~/.phantom-obsidian
+ROOT = pathlib.Path(__file__).resolve().parent.parent           # ~/.millie-obsidian
 
 DEFAULTS = {
     "paths": {                                                   # vault 기준 상대 경로

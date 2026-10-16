@@ -9,15 +9,15 @@ description: 새 Phantom vault(PARA 폴더 · AGENTS.md · 프로젝트 템플�
 
 ## 순서
 
-1. **위치는 묻지 않는다.** 기본값은 프레임워크 홈 안 `~/.phantom-obsidian/vault` — `.gitignore` 에 걸려 레포에 올라가지 않는다.
+1. **위치는 묻지 않는다.** 기본값은 프레임워크 홈 안 `~/.millie-obsidian/vault` — `.gitignore` 에 걸려 레포에 올라가지 않는다.
    사용자가 먼저 다른 자리를 말하거나 이미 vault 가 있을 때만 그 경로를 쓴다(기존 파일은 안 덮는다).
 2. 만든다:
    ```bash
-   PHANTOM_HOME="$HOME/.phantom-obsidian" python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "$HOME/.phantom-obsidian/vault" --set-default
+   PHANTOM_HOME="$HOME/.millie-obsidian" python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "$HOME/.millie-obsidian/vault" --set-default
    ```
 3. PC 에 연결한다(전역 지침 · 스킬 링크):
    ```bash
-   cd ~/.phantom-obsidian && ./install.sh
+   cd ~/.millie-obsidian && ./install.sh
    ```
 4. `install.sh` 가 Templater · Dataview 설치와 Obsidian vault 등록까지 한다. 손으로 깔라고 안내하지 않는다.
    Obsidian 이 켜져 있었다면 껐다 켜야 vault 목록에 보인다는 것만 알린다. 내려받기가 실패했을 때만

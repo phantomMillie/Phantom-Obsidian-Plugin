@@ -25,21 +25,21 @@ func days(_ a: Date, _ b: Date) -> Int { cal.dateComponents([.day], from: cal.st
 /// vault_record.py 위치 — 레포(plugin/scripts) → 예전 자리(scripts) → 플러그인 캐시 중 가장 최근.
 func vaultRecordPath() -> String {
     let fm = FileManager.default
-    for c in [home + "/.phantom-obsidian/plugin/scripts/vault_record.py", home + "/.phantom-obsidian/scripts/vault_record.py"] where fm.fileExists(atPath: c) { return c }
+    for c in [home + "/.millie-obsidian/plugin/scripts/vault_record.py", home + "/.millie-obsidian/scripts/vault_record.py"] where fm.fileExists(atPath: c) { return c }
     let cache = home + "/.claude/plugins/cache"
     let found = (fm.enumerator(atPath: cache)?.compactMap { $0 as? String } ?? [])
         .filter { $0.hasSuffix("scripts/vault_record.py") }.map { cache + "/" + $0 }
         .max { ((try? fm.attributesOfItem(atPath: $0)[.modificationDate] as? Date) ?? .distantPast) ?? .distantPast
              < ((try? fm.attributesOfItem(atPath: $1)[.modificationDate] as? Date) ?? .distantPast) ?? .distantPast }
-    return found ?? home + "/.phantom-obsidian/plugin/scripts/vault_record.py"
+    return found ?? home + "/.millie-obsidian/plugin/scripts/vault_record.py"
 }
 
 func vaultPath() -> String {
     if let v = env["PHANTOM_VAULT"] { return v }
-    if let d = FileManager.default.contents(atPath: home + "/.phantom-obsidian/config.json"),
+    if let d = FileManager.default.contents(atPath: home + "/.millie-obsidian/config.json"),
        let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
        let v = j["vault"] as? String { return (v as NSString).expandingTildeInPath }
-    return home + "/.phantom-obsidian/vault"
+    return home + "/.millie-obsidian/vault"
 }
 
 func latestTodoFile() -> String? {
@@ -69,7 +69,7 @@ struct Item {
     let importance: String?
     let due: Date?
     let postponed: Int
-    var jiraKey: String? = nil     // Jira 이슈면 키 (TECHCLIENT-1815)
+    var jiraKey: String? = nil     // Jira 이슈면 키 (ABC-123)
     var status: String? = nil      // Jira 상태 (진행 중 …)
     var age: Int { days(origin, today()) }
     var late: Int? { due.map { days($0, today()) } }   // >0 지남, 0 오늘, <0 남음
@@ -165,13 +165,13 @@ struct Prefs: Codable {
     var visible = true
     var dirs: [String: String] = [:]     // 프로젝트 → Claude 를 열 코드 폴더
     var lastProject = ""
-    var jiraSite: String? = nil      // millietown.atlassian.net
+    var jiraSite: String? = nil      // 예: 회사.atlassian.net
     var jiraEmail: String? = nil
     var jiraShow: [String]? = nil    // 블록으로 떨어뜨릴 Jira 상태 (없으면 기본값)
     var colors: [String: [Double]]? = nil   // 프로젝트 → [색상(0~1), 밝기 단계(0·1)] — 한 번 정하면 안 바뀐다
 }
 let jiraShowDefault = ["할 일", "해야 할 일", "진행 중", "PROGRESS"]
-let prefsFile = home + "/.phantom-obsidian/state/todo-pile.json"
+let prefsFile = home + "/.millie-obsidian/state/todo-pile.json"
 func loadPrefs() -> Prefs {
     guard let d = FileManager.default.contents(atPath: prefsFile), let p = try? JSONDecoder().decode(Prefs.self, from: d) else { return Prefs() }
     return p
@@ -191,7 +191,7 @@ func vaultProjects() -> [String] {
 // ── Jira (나한테 할당된 미완료 이슈) ─────────────────────────
 // 토큰은 키체인(서비스 todo-pile-jira, 계정 = 이메일), 사이트·이메일은 설정 파일. 마지막 결과는 state/jira-cache.json
 let jiraService = "todo-pile-jira"
-let jiraCache = home + "/.phantom-obsidian/state/jira-cache.json"
+let jiraCache = home + "/.millie-obsidian/state/jira-cache.json"
 
 func keychainGet(_ account: String) -> String? {
     let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: jiraService,
@@ -411,7 +411,7 @@ func texture(_ s: Spec) -> SKTexture {
 // ── 판 ──────────────────────────────────────────────────────
 /// 문제 추적용 기록 (state/todo-pile.log, 200KB 넘으면 비운다)
 func plog(_ m: String) {
-    let f = home + "/.phantom-obsidian/state/todo-pile.log"
+    let f = home + "/.millie-obsidian/state/todo-pile.log"
     let line = "\(Date()) \(m)\n"
     if let a = try? FileManager.default.attributesOfItem(atPath: f), (a[.size] as? Int ?? 0) > 200_000 { try? FileManager.default.removeItem(atPath: f) }
     if let h = FileHandle(forWritingAtPath: f) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); h.closeFile() }
@@ -755,7 +755,7 @@ final class JiraForm: NSObject {
         super.init()
         panel.title = "Jira 연결"; panel.level = .floating
         let pr = loadPrefs()
-        site.stringValue = pr.jiraSite ?? "millietown.atlassian.net"
+        site.stringValue = pr.jiraSite ?? ""; site.placeholderString = "회사.atlassian.net"
         email.stringValue = pr.jiraEmail ?? ""; email.placeholderString = "Atlassian 로그인 이메일"
         token.placeholderString = "API 토큰"
         err.textColor = .secondaryLabelColor
@@ -810,7 +810,7 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
     var recorder: AVAudioRecorder?
     var recFiles: [URL] = []        // 녹음 조각들 (멈췄다 다시 녹음하면 하나씩 는다)
     var autosave: Timer?
-    static let draftFile = home + "/.phantom-obsidian/state/meeting-draft.json"
+    static let draftFile = home + "/.millie-obsidian/state/meeting-draft.json"
     var started = Date()
     var tick: Timer?
     var onSaved: (String, String) -> Void = { _, _ in }      // (노트 경로, 노트 내용) — Claude 로 정리할 때
@@ -893,7 +893,7 @@ final class MeetingForm: NSObject, AVAudioRecorderDelegate {
     func startRec() {
         // 녹음 중엔 압축 안 한 PCM(CAF) — 앱이 갑자기 꺼져도 파일이 살아 있다 (m4a 는 멈출 때 목차를 써서, 중간에 꺼지면 못 연다).
         // 저장할 때 afconvert 로 m4a 로 줄인다(1시간 약 12MB). 녹음 중 PCM 은 16kHz 모노 — 말소리에 충분하고 1시간에 약 115MB.
-        let u = URL(fileURLWithPath: home + "/.phantom-obsidian/state/meeting-\(Int(Date().timeIntervalSince1970)).caf")
+        let u = URL(fileURLWithPath: home + "/.millie-obsidian/state/meeting-\(Int(Date().timeIntervalSince1970)).caf")
         let set: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1,
                                   AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false]
         guard let r = try? AVAudioRecorder(url: u, settings: set), r.record() else { err.textColor = .systemRed; err.stringValue = "녹음을 시작 못 했어요"; return }
@@ -982,7 +982,7 @@ func openInObsidian(_ f: String) {
 // ── Claude 열기 ─────────────────────────────────────────────
 /// `cd <dir> && claude --model sonnet "<prompt>"` 스크립트. 프롬프트는 heredoc 으로 넣어 따옴표가 안 깨진다.
 func writeClaudeScript(dir: String, prompt: String, model: String = "sonnet", flags: [String] = []) -> String {
-    let script = home + "/.phantom-obsidian/state/todo-claude-\(Int(Date().timeIntervalSince1970)).sh"
+    let script = home + "/.millie-obsidian/state/todo-claude-\(Int(Date().timeIntervalSince1970)).sh"
     let body = "#!/bin/zsh -l\ncd '\(dir.replacingOccurrences(of: "'", with: "'\\''"))' || exit 1\nrm -f \"$0\"\n"
         + "PROMPT=$(cat <<'__TODO_PROMPT__'\n\(prompt)\n__TODO_PROMPT__\n)\n# 프롬프트를 먼저 — --allowedTools 는 뒤의 인자를 다 목록으로 먹는다\nexec claude \"$PROMPT\" --model \(model) " + flags.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ") + "\n"
     try? FileManager.default.createDirectory(atPath: (script as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
@@ -1203,7 +1203,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         forms.append(f); f.show()
     }
     @objc func openJira(_ s: NSMenuItem) {
-        guard let key = item(s)?.jiraKey, let u = URL(string: "https://\(loadPrefs().jiraSite ?? "millietown.atlassian.net")/browse/\(key)") else { return }
+        guard let key = item(s)?.jiraKey, let u = URL(string: "https://\(loadPrefs().jiraSite ?? "")/browse/\(key)") else { return }
         NSWorkspace.shared.open(u)
     }
     @objc func toggleJiraStatus(_ s: NSMenuItem) {
@@ -1268,7 +1268,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let proj = it.project ?? "미분류"
         guard let dir = loadPrefs().dirs[proj] ?? chooseDir(proj), let model = pickModel(it) else { return }
         if let key = it.jiraKey {
-            let url = "https://\(loadPrefs().jiraSite ?? "millietown.atlassian.net")/browse/\(key)"
+            let url = "https://\(loadPrefs().jiraSite ?? "")/browse/\(key)"
             let jp = """
             Jira 이슈를 해결하자.
             이슈: \(it.text)
@@ -1307,7 +1307,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
                            "--fullscreen=false", "--maximize=false", "--window-width=110", "--window-height=32",
                            "--title=TODO · Claude", "-e", script]
         } else {
-            let cmd = home + "/.phantom-obsidian/state/todo-claude.command"
+            let cmd = home + "/.millie-obsidian/state/todo-claude.command"
             try? FileManager.default.removeItem(atPath: cmd)
             try? FileManager.default.copyItem(atPath: script, toPath: cmd)
             p.arguments = ["-a", "Terminal", cmd]

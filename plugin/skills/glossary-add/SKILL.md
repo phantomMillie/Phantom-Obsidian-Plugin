@@ -5,7 +5,7 @@ description: 용어를 vault 용어집에 3줄 고정 형식(정의 한 줄 + �
 
 # 용어집 추가
 
-경로는 `~/.phantom-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
+경로는 `~/.millie-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
 본문의 `<키>` = `<vault>/<paths.키>`. 설정에 없는 키는 사용자에게 묻는다.
 
 형식 원본: `<vault>/AGENTS.md` 의 `## 용어집 추가 규칙`. 폴더: `<glossary>`, 인덱스: `<glossary_index>`.

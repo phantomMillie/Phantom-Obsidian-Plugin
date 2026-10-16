@@ -32,7 +32,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import config, llm  # noqa: E402
 
 HOME = pathlib.Path.home()
-ROOT = pathlib.Path(__file__).resolve().parent.parent           # ~/.phantom-obsidian
+ROOT = pathlib.Path(__file__).resolve().parent.parent           # ~/.millie-obsidian
 LOG_FILE = ROOT / "state" / "classify.log"
 
 DEVLOG_SECTIONS = ["한 일", "결정", "이슈", "외부", "로그"]       # `내일` 은 할 일로 따로

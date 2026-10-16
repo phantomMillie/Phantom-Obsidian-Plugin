@@ -14,5 +14,5 @@
 - **메뉴바 `TODO`** = 바탕화면에 블록 보이기(켜고 끄기) · 할 일 추가 · 새로고침(다시 읽고 블록을 처음부터 다시 떨어뜨림)(내용·프로젝트·중요도·마감·난이도 필수) · 급한 순 할 일 목록(항목마다 위와 같은 동작)
 - 다 쌓이면 그리기를 멈춘다(CPU 0). 날이 바뀌면 처음부터 다시 쌓는다
 - 읽고 쓰는 곳: vault 최신 `3. Resources/07. TODO/YYYY-MM-DD.md` — `- [ ] 🔸 [프로젝트] 내용 · ❗상 · 📅 2026-10-20 · ↻1`. 3초마다 바뀌었는지 보고 바뀌면 바로 반영한다
-- 설정: `~/.phantom-obsidian/state/todo-pile.json` (보이기 · 프로젝트별 코드 폴더)
+- 설정: `~/.millie-obsidian/state/todo-pile.json` (보이기 · 프로젝트별 코드 폴더)
 - 설치 `./install.sh` · 제거 `./install.sh --uninstall` · 시험 `PILE_SCREEN=1 PILE_TEST_CLOSE=40 bin/todo-pile` (그 모니터 앱 창 위에 40초)

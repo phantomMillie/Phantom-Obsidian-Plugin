@@ -5,7 +5,7 @@
   bootstrap.py --fast    vault 만 (몇 ms) — 세션 시작 훅이 먼저 부른다
 
 SessionStart 훅(hooks/project_guard.py)이 부른다. 사용자가 따로 돌릴 일은 없다.
-  1. config.json · vault 가 없으면 ~/.phantom-obsidian/vault 를 만든다
+  1. config.json · vault 가 없으면 ~/.millie-obsidian/vault 를 만든다
   2. Templater · Dataview 설치 + Obsidian vault 등록 (네트워크 필요, 실패하면 하루 뒤 다시)
   3. macOS 면 TODO 앱을 빌드하고 로그인 때 자동 실행 (swiftc 필요, 없으면 하루 뒤 다시)
 결과는 <홈>/state/bootstrap.json, 로그는 <홈>/state/bootstrap.log.

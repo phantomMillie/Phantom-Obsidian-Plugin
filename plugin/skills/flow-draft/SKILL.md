@@ -5,7 +5,7 @@ description: 팬텀 플로우 1단계 — 클라 코드에서 확실한 흐름�
 
 # 팬텀 플로우 1단계 — 소스 플로우 왁꾸
 
-경로는 `~/.phantom-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
+경로는 `~/.millie-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
 본문의 `<키>` = `<vault>/<paths.키>`. 설정에 없는 키는 사용자에게 묻는다.
 `<vault>/AGENTS.md` 내용이 아직 컨텍스트에 없으면 먼저 읽는다 (파일명·프론트매터·폴더 승인 규칙).
 

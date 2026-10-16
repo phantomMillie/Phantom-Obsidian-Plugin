@@ -6,7 +6,7 @@ description: 작업·마일스톤·결정이 끝난 그 턴에 vault 에 바로 
 # 끝난 자리에서 기록
 
 ```bash
-R="python3 ${CLAUDE_PLUGIN_ROOT:-$HOME/.phantom-obsidian/plugin}/scripts/vault_record.py"
+R="python3 ${CLAUDE_PLUGIN_ROOT:-$HOME/.millie-obsidian/plugin}/scripts/vault_record.py"
 $R projects                                                     # 기록 가능한 프로젝트
 $R devlog --project <이름> --section "한 일" --text "..."        # 섹션: 한 일 · 결정 · 이슈 · 외부 · 로그
 $R todo   --project <이름> --text "..." --importance 상|중|하 --due YYYY-MM-DD --effort ⚡|🔸|🧱   # 할 일. 셋 다 사용자에게 받은 값만 (없으면 거부 → 먼저 묻는다)

@@ -5,7 +5,7 @@ description: 클라 코드에 흩어진 정책을 영역별로 전수 추출해 
 
 # 정책 추출 — 영역별 전수
 
-경로는 `~/.phantom-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
+경로는 `~/.millie-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
 본문의 `<키>` = `<vault>/<paths.키>`. 설정에 없는 키는 사용자에게 묻는다.
 `<vault>/AGENTS.md` 내용이 아직 컨텍스트에 없으면 먼저 읽는다.
 

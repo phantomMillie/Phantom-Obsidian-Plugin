@@ -24,7 +24,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import config, llm  # noqa: E402
 
 HOME = pathlib.Path.home()
-ROOT = pathlib.Path(__file__).resolve().parent.parent           # ~/.phantom-obsidian
+ROOT = pathlib.Path(__file__).resolve().parent.parent           # ~/.millie-obsidian
 STATE_DIR = ROOT / "state"
 STATE_FILE = STATE_DIR / "collect.json"
 LOG_FILE = STATE_DIR / "collect.log"

@@ -5,7 +5,7 @@ description: 팬텀 플로우 2단계 — 사용자가 알려준 정책으로 �
 
 # 팬텀 플로우 2단계 — 🧐 채우기
 
-경로는 `~/.phantom-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
+경로는 `~/.millie-obsidian/config.json` 에서 읽는다 — `vault` 와 `paths`(vault 기준 상대 경로).
 본문의 `<키>` = `<vault>/<paths.키>`. 설정에 없는 키는 사용자에게 묻는다.
 
 정책을 정하는 건 사용자다. 나는 **받아 적고 두 곳을 맞춘다.**
