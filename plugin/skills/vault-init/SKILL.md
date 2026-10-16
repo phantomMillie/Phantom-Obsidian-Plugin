@@ -1,6 +1,6 @@
 ---
 name: vault-init
-description: 새 Phantom vault(PARA 폴더 · AGENTS.md · 프로젝트 템플릿 · 점검 스크립트 · 대시보드)를 만든다. "vault 만들어줘", "옵시디언 폴더 새로 세팅", "팬텀 vault 초기화", "새 컴퓨터에 vault 세팅", "vault 갱신" 요청에 사용.
+description: 새 Millie vault(PARA 폴더 · AGENTS.md · 프로젝트 템플릿 · 점검 스크립트 · 대시보드)를 만든다. "vault 만들어줘", "옵시디언 폴더 새로 세팅", "밀리 vault 초기화", "새 컴퓨터에 vault 세팅", "vault 갱신" 요청에 사용.
 ---
 
 # vault 만들기
@@ -13,7 +13,7 @@ description: 새 Phantom vault(PARA 폴더 · AGENTS.md · 프로젝트 템플�
    사용자가 먼저 다른 자리를 말하거나 이미 vault 가 있을 때만 그 경로를 쓴다(기존 파일은 안 덮는다).
 2. 만든다:
    ```bash
-   PHANTOM_HOME="$HOME/.millie-obsidian" python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "$HOME/.millie-obsidian/vault" --set-default
+   MILLIE_HOME="$HOME/.millie-obsidian" python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "$HOME/.millie-obsidian/vault" --set-default
    ```
 3. PC 에 연결한다(전역 지침 · 스킬 링크):
    ```bash

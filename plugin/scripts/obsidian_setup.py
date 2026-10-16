@@ -46,7 +46,7 @@ def write_json(path, data):
 
 
 def fetch(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "phantom-obsidian"})
+    req = urllib.request.Request(url, headers={"User-Agent": "millie-obsidian"})
     with urllib.request.urlopen(req, timeout=30) as res:
         return res.read()
 

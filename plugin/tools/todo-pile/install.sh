@@ -2,7 +2,7 @@
 # TODO Pile 빌드 + 로그인 시 자동 실행(LaunchAgent). 되돌리기: ./install.sh --uninstall
 set -e
 cd "$(dirname "$0")"
-LABEL=com.phantom.todo-pile
+LABEL=com.millie.todo-pile
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 if [ "$1" = "--uninstall" ]; then
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true

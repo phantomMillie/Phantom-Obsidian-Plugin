@@ -1,9 +1,9 @@
 {
-  "name": "phantom-vault",
-  "description": "Phantom Obsidian vault 작업 방식 — 팬텀 플로우(소스 플로우 왁꾸 → 🧐 채우기 → 정책 QA 승격), 코드 정책 전수 추출, 용어집 3줄 추가. vault 자체를 새로 만드는 vault-init 포함. Agent Skills 표준. 프로젝트 필수 항목(완료 조건·마일스톤·완료일) 리마인드 훅 포함. 전역 지침 · 다른 AI 도구 연결은 install.sh.",
+  "name": "millie-vault",
+  "description": "Millie Obsidian vault 작업 방식 — 밀리 플로우(소스 플로우 왁꾸 → 🧐 채우기 → 정책 QA 승격), 코드 정책 전수 추출, 용어집 3줄 추가. vault 자체를 새로 만드는 vault-init 포함. Agent Skills 표준. 프로젝트 필수 항목(완료 조건·마일스톤·완료일) 리마인드 훅 포함. 전역 지침 · 다른 AI 도구 연결은 install.sh.",
   "version": "0.4.0",
   "author": {
-    "name": "phantom"
+    "name": "millie"
   },
   "hooks": {
     "SessionStart": [

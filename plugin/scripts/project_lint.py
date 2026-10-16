@@ -23,18 +23,18 @@ import re
 import sys
 
 def resolve_vault(argv):
-    """vault 안(.scripts/)에서 돌면 그 vault. 플러그인에서 돌면 --vault · PHANTOM_VAULT · config.json."""
+    """vault 안(.scripts/)에서 돌면 그 vault. 플러그인에서 돌면 --vault · MILLIE_VAULT · config.json."""
     here = pathlib.Path(__file__).resolve().parent.parent
     if "--vault" in argv:
         return pathlib.Path(argv[argv.index("--vault") + 1]).expanduser()
-    if os.environ.get("PHANTOM_VAULT"):
-        return pathlib.Path(os.environ["PHANTOM_VAULT"]).expanduser()
+    if os.environ.get("MILLIE_VAULT"):
+        return pathlib.Path(os.environ["MILLIE_VAULT"]).expanduser()
     if (here / "1. Projects").exists():
         return here
-    # vault 사본(.scripts/)으로 복사돼 돌 때는 phantom_home 이 옆에 없다.
+    # vault 사본(.scripts/)으로 복사돼 돌 때는 millie_home 이 옆에 없다.
     try:
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-        from phantom_home import vault_path
+        from millie_home import vault_path
     except ImportError:
         return here
     return vault_path(__file__) or here

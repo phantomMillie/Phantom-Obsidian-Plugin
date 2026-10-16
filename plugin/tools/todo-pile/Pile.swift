@@ -35,7 +35,7 @@ func vaultRecordPath() -> String {
 }
 
 func vaultPath() -> String {
-    if let v = env["PHANTOM_VAULT"] { return v }
+    if let v = env["MILLIE_VAULT"] { return v }
     if let d = FileManager.default.contents(atPath: home + "/.millie-obsidian/config.json"),
        let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
        let v = j["vault"] as? String { return (v as NSString).expandingTildeInPath }

@@ -1,6 +1,6 @@
 # Millie Obsidian Kit
 
-Phantom Obsidian vault 작업 방식(팬텀 플로우 · 정책 추출 · 용어집)을 **이 PC의 모든 코딩 에이전트**가 쓰게 하는 프레임워크. 바탕화면 TODO 블록(`plugin/tools/todo-pile`)도 같이 깔린다. 팀에서 같이 쓴다.
+Millie Obsidian vault 작업 방식(밀리 플로우 · 정책 추출 · 용어집)을 **이 PC의 모든 코딩 에이전트**가 쓰게 하는 프레임워크. 바탕화면 TODO 블록(`plugin/tools/todo-pile`)도 같이 깔린다. 팀에서 같이 쓴다.
 
 > **Obsidian 커뮤니티 플러그인이 아니다.** 이름에 Obsidian 이 들어가지만 `.obsidian/plugins/` 에 넣는 물건이 아니다.
 > vault 마다 설치하는 게 아니라 **PC 당 한 번** `~/.millie-obsidian` 에 설치하고, 연결되는 vault 는 `config.json` 의 `vault` 하나다.
@@ -17,7 +17,7 @@ cd ~/.millie-obsidian
 
 - **PC 종속.** 한 번 설치하면 어느 AI · 어느 작업 폴더 · 어느 세션에서든 같은 지침과 스킬이 로드된다. 세션 훅 · 환경변수 · 작업 폴더에 기대지 않는다
 - **본체 = 표준 포맷.** 방법은 [Agent Skills](https://agentskills.io/specification)(`SKILL.md`), vault 규칙은 vault 루트 `AGENTS.md`. 특정 AI 전용 문법을 본체에 넣지 않는다
-- **규칙 원본은 vault에 있다** — `AGENTS.md`, `팬텀 플로우.md`. 스킬은 절차 + 완료 검사만. 규칙이 바뀌면 원본만 고친다
+- **규칙 원본은 vault에 있다** — `AGENTS.md`, `밀리 플로우.md`. 스킬은 절차 + 완료 검사만. 규칙이 바뀌면 원본만 고친다
 
 ## 구조
 
@@ -25,14 +25,14 @@ cd ~/.millie-obsidian
 ~/.millie-obsidian/            프레임워크 홈 (PC에 하나)
 ├── config.json                 vault 경로 — PC 설정 (gitignore)
 ├── vault/                      vault 본체 (gitignore)
-├── PHANTOM.template.md         전역 지침 원본 → install.sh 가 PHANTOM.md 생성 (gitignore)
+├── MILLIE.template.md         전역 지침 원본 → install.sh 가 MILLIE.md 생성 (gitignore)
 ├── install.sh                  PC에 연결 / 해제
 ├── .claude-plugin/             마켓플레이스 메타 (source: ./plugin)
 └── plugin/                     Claude Code 가 캐시로 복사해 가는 범위
     ├── .claude-plugin/         플러그인 메타 (스킬 · 훅)
     ├── skills/<이름>/SKILL.md   방법 원본
     ├── hooks/project_guard.py  프로젝트 필수 항목 리마인드 훅 (Claude Code)
-    ├── scripts/phantom_home.py config.json 위치 찾기 (캐시에서 돌아도 같은 설정)
+    ├── scripts/millie_home.py config.json 위치 찾기 (캐시에서 돌아도 같은 설정)
     ├── scripts/vault_init.py   새 vault 생성 · 관리 파일 갱신
     ├── scripts/project_lint.py 프로젝트 필수 항목 점검 (원본)
     └── vault-template/         vault 골격 (회사·개인 데이터 없음)
@@ -44,13 +44,13 @@ config.json 과 vault 는 plugin/ 밖에 둔다 — 캐시로 복사되지 않�
 
 ```
 ~/.claude/CLAUDE.md    ┐
-~/.gemini/GEMINI.md    ├─ 관리 블록 → PHANTOM.md   (전역 지침: vault 경로 · AGENTS.md 읽기 · 스킬 목록)
+~/.gemini/GEMINI.md    ├─ 관리 블록 → MILLIE.md   (전역 지침: vault 경로 · AGENTS.md 읽기 · 스킬 목록)
 ~/.codex/AGENTS.md     ┘  (Claude · Gemini 는 import, Codex 는 내용 복사)
 ~/.agents/skills/*     → skills/*                  (Codex · Gemini CLI · Copilot · Cursor · OpenCode)
 Claude Code 플러그인    → 이 폴더                   (스킬)
 ```
 
-관리 블록(`<!-- phantom-obsidian:start/end -->`) 밖 내용은 건드리지 않는다. 여러 번 돌려도 블록은 하나.
+관리 블록(`<!-- millie-obsidian:start/end -->`) 밖 내용은 건드리지 않는다. 여러 번 돌려도 블록은 하나.
 
 ## 설정 (`config.json`)
 
@@ -60,7 +60,7 @@ vault 마다 다른 값은 전부 여기. 프레임워크 코드 · 스킬에는
 ```
 vault                 vault 절대 경로
 paths.projects ...    PARA 폴더 (projects · areas · resources · archives · store)
-paths.method_doc      팬텀 플로우 방법론 문서            (flow-draft · qa-promote)
+paths.method_doc      밀리 플로우 방법론 문서            (flow-draft · qa-promote)
 paths.meetings        회의록 폴더                        (flow-draft)
 paths.flow_output     플로우 · QA 문서 기본 위치          (flow-draft)
 paths.qa_example      완성형 정책 QA 예시 (선택)          (qa-promote)
@@ -112,7 +112,7 @@ vault 는 `~/.millie-obsidian/vault` 에 생긴다 — 프레임워크 홈 안�
 다른 자리에 두고 싶을 때만 `./install.sh --init <폴더>` 로 폴더를 준다.
 
 또는 Claude Code 에서 "vault 만들어줘" → `vault-init` 스킬이 위치를 묻고 같은 일을 한다.
-만들어지는 것: PARA 폴더 · `AGENTS.md` · 프로젝트 템플릿 9종 · `.scripts/project_lint.py` · `📓 Projects` 대시보드 · 팬텀 플로우 방법 문서 · 스킬이 쓰는 인박스/인덱스 스텁.
+만들어지는 것: PARA 폴더 · `AGENTS.md` · 프로젝트 템플릿 9종 · `.scripts/project_lint.py` · `📓 Projects` 대시보드 · 밀리 플로우 방법 문서 · 스킬이 쓰는 인박스/인덱스 스텁.
 이미 있는 파일은 덮어쓰지 않는다.
 
 **Templater · Dataview 는 `install.sh` 가 직접 설치한다** (`plugin/scripts/obsidian_setup.py`) — 최신 릴리스를 `<vault>/.obsidian/plugins/` 에 받고, 켜고,

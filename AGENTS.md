@@ -43,9 +43,9 @@ cp config.example.json config.json      # "vault" 값을 기존 vault 절대 경
 |---|---|
 | `~/.millie-obsidian/` | 프레임워크 본체 (clone 위치. 다른 경로에 두지 않는다) |
 | `~/.millie-obsidian/vault/` | vault 기본 자리. `.gitignore` 에 걸려 레포에 올라가지 않는다 |
-| `~/.claude/CLAUDE.md` · `~/.gemini/GEMINI.md` · `~/.codex/AGENTS.md` | `<!-- phantom-obsidian:start/end -->` 관리 블록 추가. 블록 밖은 건드리지 않는다 |
+| `~/.claude/CLAUDE.md` · `~/.gemini/GEMINI.md` · `~/.codex/AGENTS.md` | `<!-- millie-obsidian:start/end -->` 관리 블록 추가. 블록 밖은 건드리지 않는다 |
 | `~/.agents/skills/*` | `skills/*` 로 가는 심볼릭 링크 |
-| Claude Code 플러그인 | `phantom-vault@phantom-obsidian` 등록 |
+| Claude Code 플러그인 | `millie-vault@millie-obsidian` 등록 |
 
 해제는 `./install.sh --remove`. 관리 블록과 링크, 플러그인 등록만 지우고 레포 파일과 vault 는 남긴다.
 

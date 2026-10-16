@@ -14,10 +14,10 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
-from phantom_home import load_config, phantom_home      # noqa: E402
+from millie_home import load_config, millie_home      # noqa: E402
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent  # 캐시 사본일 수 있다 — 코드만 여기서 읽는다
-HOME = phantom_home(__file__)                            # config.json · state 는 늘 실제 홈에서
+HOME = millie_home(__file__)                            # config.json · state 는 늘 실제 홈에서
 STATE = HOME / "state" / "guard.json"
 
 

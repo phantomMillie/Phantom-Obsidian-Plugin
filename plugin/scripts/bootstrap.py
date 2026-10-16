@@ -9,7 +9,7 @@ SessionStart 훅(hooks/project_guard.py)이 부른다. 사용자가 따로 돌�
   2. Templater · Dataview 설치 + Obsidian vault 등록 (네트워크 필요, 실패하면 하루 뒤 다시)
   3. macOS 면 TODO 앱을 빌드하고 로그인 때 자동 실행 (swiftc 필요, 없으면 하루 뒤 다시)
 결과는 <홈>/state/bootstrap.json, 로그는 <홈>/state/bootstrap.log.
-PHANTOM_NO_TODO_PILE=1 이면 3번을 건너뛴다.
+MILLIE_NO_TODO_PILE=1 이면 3번을 건너뛴다.
 """
 import datetime
 import fcntl
@@ -26,14 +26,14 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 PLUGIN = HERE.parent
 sys.path.insert(0, str(HERE))
-from phantom_home import phantom_home           # noqa: E402
+from millie_home import millie_home           # noqa: E402
 
-HOME = phantom_home(__file__)
+HOME = millie_home(__file__)
 STATE_DIR = HOME / "state"
 STATE = STATE_DIR / "bootstrap.json"
 LOG = STATE_DIR / "bootstrap.log"
 RETRY = datetime.timedelta(days=1)
-LABEL = "com.phantom.todo-pile"
+LABEL = "com.millie.todo-pile"
 
 
 def now():
@@ -87,7 +87,7 @@ def ensure_vault():
     """config.json · vault 가 없으면 새로 만든다. 이미 있으면 아무것도 안 한다."""
     if vault_dir() and vault_dir().is_dir():
         return True
-    env = dict(os.environ, PHANTOM_HOME=str(HOME))
+    env = dict(os.environ, MILLIE_HOME=str(HOME))
     r = subprocess.run([sys.executable, str(HERE / "vault_init.py"), str(HOME / "vault"), "--set-default"],
                        capture_output=True, text=True, env=env, timeout=60)
     log("vault_init rc=%d %s" % (r.returncode, (r.stdout + r.stderr).strip()[-300:]))
@@ -106,7 +106,7 @@ def ensure_obsidian(st):
 
 def ensure_todo_pile(st):
     src = PLUGIN / "tools" / "todo-pile" / "Pile.swift"
-    if sys.platform != "darwin" or os.environ.get("PHANTOM_NO_TODO_PILE") or not src.is_file():
+    if sys.platform != "darwin" or os.environ.get("MILLIE_NO_TODO_PILE") or not src.is_file():
         return
     info = src.with_name("Info.plist")
     key = hashlib.sha256(src.read_bytes() + (info.read_bytes() if info.is_file() else b"")).hexdigest()[:16]
@@ -129,6 +129,11 @@ def ensure_todo_pile(st):
         done(st, "todo_pile", False, key)
         return
     os.replace(tmp, binary)                  # 돌고 있는 앱은 옛 파일을 계속 쓴다 — 바로 죽지 않는다
+    old = pathlib.Path.home() / "Library" / "LaunchAgents" / ("com." + "phan" + "tom.todo-pile.plist")   # 이름 바꾸기 전 것
+    if old.is_file():
+        subprocess.run(["launchctl", "bootout", "gui/%s/%s" % (os.getuid(), old.stem)], capture_output=True)
+        old.unlink()
+        log("옛 자동 실행 정리 %s" % old.stem)
     plist = pathlib.Path.home() / "Library" / "LaunchAgents" / (LABEL + ".plist")
     plist.parent.mkdir(parents=True, exist_ok=True)
     want = plistlib.dumps({

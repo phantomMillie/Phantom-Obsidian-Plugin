@@ -21,9 +21,9 @@ DEFAULTS = {
         "resource_skip": [],                                     # 자료 주제에서 뺄 Resources 하위 폴더
     },
     "local": {                                                   # vault 밖, 이 PC 의 파일
-        "anthropic_key": "~/.config/phantom-obsidian/anthropic-key",
-        "llm_cmd": "~/.config/phantom-obsidian/llm-cmd",
-        "slack_webhook": "~/.config/phantom-obsidian/slack-webhook",
+        "anthropic_key": "~/.config/millie-obsidian/anthropic-key",
+        "llm_cmd": "~/.config/millie-obsidian/llm-cmd",
+        "slack_webhook": "~/.config/millie-obsidian/slack-webhook",
     },
 }
 

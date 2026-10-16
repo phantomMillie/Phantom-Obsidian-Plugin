@@ -1,4 +1,4 @@
-# Phantom Vault — 작업 규칙
+# Millie Vault — 작업 규칙
 
 ## 핵심 6줄
 
@@ -20,7 +20,7 @@
 | 📆 완료일 | frontmatter `due:` | 날짜. `9999`·빈칸 = 미설정 |
 
 - 점검: `python3 .scripts/project_lint.py` (읽기 전용). 채우기: `/obsidian-project-scope <이름>`
-- 리마인드 경로: 개발일지 알림(`추가 검토사항`, 선택) · AI 세션 훅(phantom-vault) · `📓 Projects` 대시보드 `필수 항목` 열
+- 리마인드 경로: 개발일지 알림(`추가 검토사항`, 선택) · AI 세션 훅(millie-vault) · `📓 Projects` 대시보드 `필수 항목` 열
 - 날짜·조건을 사용자 답 없이 지어내 채우지 않는다. 비어 있는 채로 두는 게 맞다
 - frontmatter: `status: active|paused|done` (Store 는 `paused` + `tags: [project/paused]`)
 - 분류용 칸(`00. 미분류` · `01. Daily`)은 프로젝트가 아니라 점검에서 뺀다
@@ -113,7 +113,7 @@ dataview는 파일명이 아닌 `type`으로 집계 → 파일명 바꿔도 안 
 
 그래프 뷰에서 클러스터 응집이 목적. Store(중지)와 Projects(진행)를 엮으면 활성/정지 구분이 흐려진다. 회의 카테고리 허브도 프로젝트 맥락과 분리.
 
-### 문서 2레이어 (팬텀 플로우 산출물)
+### 문서 2레이어 (밀리 플로우 산출물)
 
 - **소스 플로우** `🧭 <영역>` — 코드 용어(메서드·심볼) 기준. AS-IS→TO-BE 추적용
 - **정책 QA** `✅ <영역> QA` — 정책·사용자 용어로 재작성. 코드 심볼은 하단 "소스 매핑" 표로만

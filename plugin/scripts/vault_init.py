@@ -16,17 +16,17 @@ import shutil
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from phantom_home import phantom_home                              # noqa: E402
+from millie_home import millie_home                              # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent              # plugin/ — 템플릿·스크립트가 있는 곳
 TEMPLATE = ROOT / "vault-template"
-HOME = phantom_home(__file__)                                      # config.json 이 있는 프레임워크 홈
+HOME = millie_home(__file__)                                      # config.json 이 있는 프레임워크 홈
 MANAGED = [".scripts/project_lint.py", ".claude/commands/obsidian-project-scope.md"]
 
 CONFIG_PATHS = {
     "projects": "1. Projects", "areas": "2. Areas", "resources": "3. Resources",
     "archives": "4. Archives", "store": "5. Store",
-    "method_doc": "3. Resources/00. Reference/00. 기초자료/팬텀 플로우.md",
+    "method_doc": "3. Resources/00. Reference/00. 기초자료/밀리 플로우.md",
     "meetings": "3. Resources/01. Meeting", "flow_output": "3. Resources/99. QA",
     "glossary": "3. Resources/02. 용어집", "glossary_index": "3. Resources/02. 용어집/📖 용어집.md",
     "policy_index": "3. Resources/00. Reference/02. 정책/🗂️ 정책 인덱스.md",

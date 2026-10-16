@@ -1,6 +1,6 @@
-# Phantom Vault
+# Millie Vault
 
-이 vault 는 `phantom-vault` 플러그인의 `vault-init` 으로 만들었다. 규칙은 [[AGENTS]] 에 있다.
+이 vault 는 `millie-vault` 플러그인의 `vault-init` 으로 만들었다. 규칙은 [[AGENTS]] 에 있다.
 
 ## 처음 한 번
 

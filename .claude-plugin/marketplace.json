@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "phantom-obsidian",
-  "description": "Phantom Obsidian vault 작업 방식 — 팬텀 플로우 · 정책 추출 · 용어집 (Agent Skills 표준)",
+  "name": "millie-obsidian",
+  "description": "Millie Obsidian vault 작업 방식 — 밀리 플로우 · 정책 추출 · 용어집 (Agent Skills 표준)",
   "owner": {
-    "name": "phantom"
+    "name": "millie"
   },
   "plugins": [
     {
-      "name": "phantom-vault",
-      "description": "팬텀 플로우 · 정책 추출 · 용어집을 어느 폴더에서든 vault 규칙대로 작성한다.",
+      "name": "millie-vault",
+      "description": "밀리 플로우 · 정책 추출 · 용어집을 어느 폴더에서든 vault 규칙대로 작성한다.",
       "source": "./plugin",
       "category": "productivity"
     }

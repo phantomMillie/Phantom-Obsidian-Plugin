@@ -22,7 +22,7 @@
 - **폴더·노트 생성과 보관(이동)은 `--approved` 가 있어야만** 한다. 이 플래그는 사용자가 방금 허락했다는 뜻이다 — 묻지 않고 붙이지 않는다.
 - 같은 줄이 이미 있으면 건너뛴다 (같은 작업을 두 번 보고해도 한 번만 남는다).
 - 비밀처럼 보이는 문자열은 가린다.
-vault 위치: --vault · PHANTOM_VAULT · <플러그인>/config.json
+vault 위치: --vault · MILLIE_VAULT · <플러그인>/config.json
 """
 import argparse
 import datetime
@@ -60,13 +60,13 @@ def vault_and_paths(vault_arg):
     cfg = {}
     try:
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-        from phantom_home import load_config
+        from millie_home import load_config
         cfg = load_config(__file__)
     except Exception:
         pass
-    v = vault_arg or os.environ.get("PHANTOM_VAULT") or cfg.get("vault")
+    v = vault_arg or os.environ.get("MILLIE_VAULT") or cfg.get("vault")
     if not v or not pathlib.Path(v).expanduser().is_dir():
-        die("vault 를 못 찾음 (--vault · PHANTOM_VAULT · config.json). `vault-init` 로 만들거나 config.json 을 고친다.")
+        die("vault 를 못 찾음 (--vault · MILLIE_VAULT · config.json). `vault-init` 로 만들거나 config.json 을 고친다.")
     return pathlib.Path(v).expanduser(), cfg.get("paths", {})
 
 

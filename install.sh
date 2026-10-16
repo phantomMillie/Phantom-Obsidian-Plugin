@@ -10,12 +10,12 @@
 #   --no-todo-pile          바탕화면 TODO 앱(macOS) 설치를 건너뛴다
 #
 # 하는 일
-#   1. config.json 의 vault 경로로 PHANTOM.md(전역 지침) 생성
+#   1. config.json 의 vault 경로로 MILLIE.md(전역 지침) 생성
 #   2. skills/ → ~/.agents/skills 링크          (Codex · Gemini CLI · Copilot · Cursor · OpenCode)
 #   3. 전역 지침 파일에 관리 블록                (홈 폴더가 있는 도구만)
-#        ~/.claude/CLAUDE.md   PHANTOM.md import
-#        ~/.gemini/GEMINI.md   PHANTOM.md import
-#        ~/.codex/AGENTS.md    PHANTOM.md 내용 (Codex 는 import 없음)
+#        ~/.claude/CLAUDE.md   MILLIE.md import
+#        ~/.gemini/GEMINI.md   MILLIE.md import
+#        ~/.codex/AGENTS.md    MILLIE.md 내용 (Codex 는 import 없음)
 #   4. Claude Code 플러그인 등록 (스킬)
 #   5. vault 에 Templater · Dataview 설치 + Obsidian vault 목록에 등록 (plugin/scripts/obsidian_setup.py)
 #   6. 바탕화면 TODO 앱 빌드 + 로그인 시 자동 실행 (plugin/scripts/bootstrap.py — 플러그인 훅도 같은 걸 한다)
@@ -26,7 +26,7 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 REMOVE=0; [ "${1:-}" = "--remove" ] && REMOVE=1
 
 if [ "${1:-}" = "--init" ]; then
-  PHANTOM_HOME="$REPO" python3 "$REPO/plugin/scripts/vault_init.py" "${2:-$REPO/vault}" --set-default
+  MILLIE_HOME="$REPO" python3 "$REPO/plugin/scripts/vault_init.py" "${2:-$REPO/vault}" --set-default
 fi
 
 # 관리 블록 쓰기/지우기: block <파일> <내용파일|""(지우기)>
@@ -34,9 +34,11 @@ block() {
   python3 - "$1" "$2" <<'EOF'
 import pathlib, re, sys
 f, src = pathlib.Path(sys.argv[1]), sys.argv[2]
-S, E = "<!-- phantom-obsidian:start -->", "<!-- phantom-obsidian:end -->"
+S, E = "<!-- millie-obsidian:start -->", "<!-- millie-obsidian:end -->"
+OLD = "phan" + "tom-obsidian"                     # 옛 이름 블록도 같이 걷어낸다
 txt = f.read_text(encoding="utf-8") if f.exists() else ""
-txt = re.sub(r"\n?" + re.escape(S) + r".*?" + re.escape(E) + r"\n?", "\n", txt, flags=re.S).strip("\n")
+for s_, e_ in ((S, E), (f"<!-- {OLD}:start -->", f"<!-- {OLD}:end -->")):
+    txt = re.sub(r"\n?" + re.escape(s_) + r".*?" + re.escape(e_) + r"\n?", "\n", txt, flags=re.S).strip("\n")
 if src:
     body = pathlib.Path(src).read_text(encoding="utf-8").strip("\n")
     txt = (txt + "\n\n" if txt else "") + f"{S}\n{body}\n{E}"
@@ -59,8 +61,8 @@ if [ "$REMOVE" = 1 ]; then
   [ -d "$HOME/.gemini" ] && block "$HOME/.gemini/GEMINI.md" ""
   [ -d "$HOME/.codex"  ] && block "$HOME/.codex/AGENTS.md" ""
   if command -v claude >/dev/null; then
-    claude plugin uninstall phantom-vault@phantom-obsidian >/dev/null 2>&1 || true
-    claude plugin marketplace remove phantom-obsidian >/dev/null 2>&1 || true
+    claude plugin uninstall millie-vault@millie-obsidian >/dev/null 2>&1 || true
+    claude plugin marketplace remove millie-obsidian >/dev/null 2>&1 || true
     echo "제거 Claude Code 플러그인"
   fi
   # Obsidian vault 목록에서 뺀다 — 안 빼면 없어진 폴더를 가리키는 항목이 남는다.
@@ -72,16 +74,28 @@ if [ "$REMOVE" = 1 ]; then
   exit 0
 fi
 
+# 0. 옛 이름(phantom-*) 정리 — 이름을 millie-* 로 바꾸기 전에 깐 PC
+OLD="phan""tom"
+rm -f "$REPO/PHAN""TOM.md"                     # 옛 전역 지침 파일 (지금은 MILLIE.md)
+if [ -f "$HOME/Library/LaunchAgents/com.$OLD.todo-pile.plist" ]; then
+  launchctl bootout "gui/$(id -u)/com.$OLD.todo-pile" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/com.$OLD.todo-pile.plist" && echo "정리 옛 자동 실행 com.$OLD.todo-pile"
+fi
+if command -v claude >/dev/null; then
+  claude plugin uninstall "$OLD-vault@$OLD-obsidian" >/dev/null 2>&1 || true
+  claude plugin marketplace remove "$OLD-obsidian" >/dev/null 2>&1 || true
+fi
+
 # 1. 전역 지침 생성
 [ -f "$REPO/config.json" ] || { echo "config.json 없음 — ./install.sh --init <새 vault 폴더> 로 vault 를 만들거나, cp config.example.json config.json 후 기존 vault 경로 수정" >&2; exit 1; }
 VAULT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["vault"])' "$REPO/config.json")"
 [ -d "$VAULT" ] || { echo "vault 폴더 없음: $VAULT" >&2; exit 1; }
-python3 - "$REPO/PHANTOM.template.md" "$REPO/PHANTOM.md" "$VAULT" <<'EOF'
+python3 - "$REPO/MILLIE.template.md" "$REPO/MILLIE.md" "$VAULT" <<'EOF'
 import pathlib, sys
 t = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 pathlib.Path(sys.argv[2]).write_text(t.replace("{{VAULT}}", sys.argv[3]), encoding="utf-8")
 EOF
-echo "생성 $REPO/PHANTOM.md"
+echo "생성 $REPO/MILLIE.md"
 
 # 2. 스킬 링크
 mkdir -p "$HOME/.agents/skills"
@@ -92,13 +106,13 @@ for s in "$REPO"/plugin/skills/*/; do
 done
 
 # 3. 전역 지침 관리 블록
-IMPORT="$(mktemp)"; printf '@%s\n' "$REPO/PHANTOM.md" > "$IMPORT"
+IMPORT="$(mktemp)"; printf '@%s\n' "$REPO/MILLIE.md" > "$IMPORT"
 # 홈 폴더가 아직 없어도 CLI 가 깔려 있으면 만들어서 쓴다 — 처음 설치하는 PC 에서는
 # ~/.claude 같은 폴더가 그 도구를 한 번 돌린 뒤에야 생기기 때문.
 want() { [ -d "$HOME/$1" ] || command -v "$2" >/dev/null; }
 want .claude claude && { mkdir -p "$HOME/.claude"; block "$HOME/.claude/CLAUDE.md" "$IMPORT"; }
 want .gemini gemini && { mkdir -p "$HOME/.gemini"; block "$HOME/.gemini/GEMINI.md" "$IMPORT"; }
-want .codex  codex  && { mkdir -p "$HOME/.codex";  block "$HOME/.codex/AGENTS.md" "$REPO/PHANTOM.md"; }
+want .codex  codex  && { mkdir -p "$HOME/.codex";  block "$HOME/.codex/AGENTS.md" "$REPO/MILLIE.md"; }
 rm -f "$IMPORT"
 
 # 4. Claude Code 플러그인 — Claude 는 plugin/ 을 ~/.claude/plugins/cache/ 로 복사해서 돌린다.
@@ -107,10 +121,10 @@ rm -f "$IMPORT"
 if command -v claude >/dev/null; then
   # 이미 등록돼 있으면 marketplace add 가 marketplace.json 을 다시 읽지 않는다.
   # 먼저 떼고 붙여야 source 변경과 새 버전이 반영된다.
-  claude plugin marketplace remove phantom-obsidian >/dev/null 2>&1 || true
+  claude plugin marketplace remove millie-obsidian >/dev/null 2>&1 || true
   claude plugin marketplace add "$REPO" >/dev/null 2>&1 || true
-  claude plugin install phantom-vault@phantom-obsidian >/dev/null 2>&1 || true
-  echo "등록 Claude Code 플러그인 phantom-vault@phantom-obsidian"
+  claude plugin install millie-vault@millie-obsidian >/dev/null 2>&1 || true
+  echo "등록 Claude Code 플러그인 millie-vault@millie-obsidian"
 fi
 
 # 5. Obsidian 쪽 준비 — Templater · Dataview 설치 · 설정 · vault 등록
@@ -121,8 +135,8 @@ case " $* " in
 esac
 
 # 6. 바탕화면 TODO 앱 · Obsidian 설정 — 플러그인 훅이 세션 시작 때 똑같이 한다. 여기서는 바로 끝까지 돌린다.
-if [ -n "${PHANTOM_NO_TODO_PILE:-}" ] || case " $* " in *" --no-todo-pile "*) true;; *) false;; esac; then
-  PHANTOM_NO_TODO_PILE=1 PHANTOM_HOME="$REPO" python3 "$REPO/plugin/scripts/bootstrap.py" || true
+if [ -n "${MILLIE_NO_TODO_PILE:-}" ] || case " $* " in *" --no-todo-pile "*) true;; *) false;; esac; then
+  MILLIE_NO_TODO_PILE=1 MILLIE_HOME="$REPO" python3 "$REPO/plugin/scripts/bootstrap.py" || true
 else
-  PHANTOM_HOME="$REPO" python3 "$REPO/plugin/scripts/bootstrap.py" || true
+  MILLIE_HOME="$REPO" python3 "$REPO/plugin/scripts/bootstrap.py" || true
 fi
