@@ -1,5 +1,6 @@
 import Cocoa
 import SpriteKit
+import AVFoundation
 
 // TODO Pile — 할 일이 블록이 되어 바탕화면(폴더 아이콘 위, 앱 창 아래)에 떨어져 기울고 구르며 쌓인다.
 // 할 일 = 글자 카드(급할수록 글자가 크다, 길면 여러 줄), 메아리 = 글자 없는 작은 블록. 오래될수록 · 마감이 다가오거나 지날수록
@@ -351,6 +352,18 @@ func makeSpec(_ it: Item, echo: Int, k: CGFloat, color: NSColor) -> Spec {
                 title: it.text, sub: sub, font: f, textW: max(ts.width, 1), badge: badge)
 }
 
+/// 도구 블록 — 늘 쌓여 있는 "＋ 할 일 쓰기" · "🎙 회의하기". 클릭하면 바로 그 창이 뜬다.
+let toolKinds = ["tool:todo", "tool:meeting"]
+func makeToolSpec(_ kind: String, k: CGFloat) -> Spec {
+    let f = max(22, 26 * k)                  // 늘 눈에 띄게 — 화면이 차서 작아져도 이만큼은
+    let (title, sub) = kind == "tool:todo" ? ("＋ 할 일 쓰기", "클릭하면 바로 할 일로") : ("🎙 회의하기", "클릭 — 녹음 · 회의 내용 쓰기")
+    let (f1, f2) = fonts(f)
+    let w = max((title as NSString).size(withAttributes: [.font: f1]).width, (sub as NSString).size(withAttributes: [.font: f2]).width)
+    let h = f1.ascender - f1.descender + f2.ascender - f2.descender + f * 0.3 + f * 1.1
+    return Spec(key: kind, raw: kind, size: CGSize(width: ceil(w + f * 1.8), height: ceil(h)),
+                color: NSColor(calibratedWhite: 0.96, alpha: 1), title: title, sub: sub, font: f, textW: ceil(w), badge: nil)
+}
+
 /// 둥근 카드 + 은은한 위쪽 빛 + 그림자. 메아리는 같은 색을 어둡고 반투명하게.
 func texture(_ s: Spec) -> SKTexture {
     let px: CGFloat = 2
@@ -425,6 +438,8 @@ final class PileScene: SKScene {
     var onSettled: () -> Void = {}
     var onWake: () -> Void = {}
     var onMenu: (String, NSEvent) -> Void = { _, _ in }   // 줄 원문, 이벤트
+    var onTool: (String) -> Void = { _ in }               // 도구 블록 클릭
+    var downAt = CGPoint.zero
 
     func setup() {
         backgroundColor = .clear
@@ -526,19 +541,24 @@ final class PileScene: SKScene {
         let pt = e.location(in: self)
         plog("scene mouseDown \(pt) hit=\(block(at: pt)?.name?.prefix(30) ?? "nil")")
         guard let n = block(at: pt) else { return }
-        dragNode = n; dragTo = pt
+        dragNode = n; dragTo = pt; downAt = pt
         n.physicsBody?.linearDamping = 4
         onWake()
     }
     override func mouseDragged(with e: NSEvent) { if dragNode != nil { dragTo = e.location(in: self) } }
     override func mouseUp(with e: NSEvent) {
-        dragNode?.physicsBody?.linearDamping = 0.15
+        let n = dragNode
+        n?.physicsBody?.linearDamping = 0.15
         dragNode = nil; calm = 0; idle = 0
+        // 거의 안 움직였으면 클릭 — 도구 블록이면 그 창을 연다
+        let up = e.location(in: self)
+        if let raw = n?.userData?["raw"] as? String, raw.hasPrefix("tool:"), hypot(up.x - downAt.x, up.y - downAt.y) < 6 { onTool(raw) }
     }
     // 오른쪽 클릭 = 이 할 일로 할 수 있는 것
     override func rightMouseDown(with e: NSEvent) {
         plog("scene rightMouseDown hit=\(block(at: e.location(in: self))?.name?.prefix(30) ?? "nil")")
         guard let n = block(at: e.location(in: self)), let raw = n.userData?["raw"] as? String else { return }
+        if raw.hasPrefix("tool:") { onTool(raw); return }
         onMenu(raw, e)
     }
 }
@@ -555,9 +575,10 @@ final class PileController {
     func specs(_ items: [Item], k: CGFloat) -> [Spec] {
         let cmap = projectColors(items.map { $0.project ?? "미분류" })
         // 오래된 것부터 떨어져 아래에, 메아리는 본 카드 뒤에
-        return items.sorted { $0.origin < $1.origin }.flatMap { it in
+        let blocks = items.sorted { $0.origin < $1.origin }.flatMap { it in
             (0...echoes(it)).map { makeSpec(it, echo: $0, k: k, color: cmap[it.project ?? "미분류"] ?? .gray) }
         }
+        return blocks + toolKinds.map { makeToolSpec($0, k: k) }      // 도구 블록은 마지막 — 더미 위에 얹혀 잘 보인다
     }
 
     /// 다 쌓였을 때 화면을 40% 남짓 덮는 크기 배율 (어지럽게 쌓이니 틈이 많다).
@@ -633,6 +654,7 @@ final class AddForm: NSObject {
         let prefs = loadPrefs()
         project.addItems(withTitles: vaultProjects())
         if project.itemTitles.contains(prefs.lastProject) { project.selectItem(withTitle: prefs.lastProject) }
+        importance.selectedSegment = 1; effort.selectedSegment = 1       // 중 · 반나절 — 보이는 그대로 엔터면 이 값
         due.datePickerStyle = .textFieldAndStepper; due.datePickerElements = .yearMonthDay
         due.minDate = today(); due.dateValue = cal.date(byAdding: .day, value: 3, to: today())!
         err.textColor = .systemRed
@@ -774,6 +796,145 @@ final class JiraForm: NSObject {
     }
 }
 
+// ── 회의 ────────────────────────────────────────────────────
+/// 회의하기 — 카테고리 · 종류 · 참석자 · 안건 · 내용 · 결정 사항을 쓰고, 녹음도 한다.
+/// 저장은 회의 템플릿과 같은 자리·형식: `3. Resources/01. Meeting/<카테고리>/<날짜>.md` (프로젝트가 아니면 `<날짜> <종류>`).
+/// 녹음은 같은 폴더 `녹음/` 에 m4a 로 두고 노트에 `![[…]]` 로 붙인다.
+final class MeetingForm: NSObject, AVAudioRecorderDelegate {
+    let panel = FormPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 640), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+    let category = NSPopUpButton(), kind = NSPopUpButton()
+    let attendees = NSTextField()
+    let agenda = NSTextView(), body = NSTextView(), decisions = NSTextView()
+    let rec = NSButton(title: "● 녹음 시작", target: nil, action: nil)
+    let err = NSTextField(labelWithString: "")
+    var recorder: AVAudioRecorder?
+    var recFile: URL?
+    var started = Date()
+    var tick: Timer?
+    var onSaved: (String, String) -> Void = { _, _ in }      // (노트 경로, 노트 내용) — Claude 로 정리할 때
+    let kinds = ["팀 미팅", "데일리 스크럼", "1on1", "배포 얼라인", "기타"]
+
+    func box(_ tv: NSTextView, _ h: CGFloat) -> NSScrollView {
+        tv.isRichText = false; tv.font = .systemFont(ofSize: 13); tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.autoresizingMask = [.width]; tv.textContainerInset = NSSize(width: 4, height: 6)
+        let sv = NSScrollView(); sv.documentView = tv; sv.hasVerticalScroller = true; sv.borderType = .bezelBorder
+        sv.heightAnchor.constraint(greaterThanOrEqualToConstant: h).isActive = true
+        return sv
+    }
+
+    override init() {
+        super.init()
+        panel.title = "회의하기"; panel.level = .floating; panel.minSize = NSSize(width: 520, height: 520)
+        let projects = vaultProjects()
+        category.addItems(withTitles: projects + ["팀", "기타", "배포", "MDS", "프로틴", "iOS"])
+        if projects.contains(loadPrefs().lastProject) { category.selectItem(withTitle: loadPrefs().lastProject) }
+        kind.addItems(withTitles: kinds)
+        attendees.placeholderString = "참석자 (쉼표로)"
+        rec.target = self; rec.action = #selector(toggleRec); rec.bezelStyle = .rounded
+        err.textColor = .secondaryLabelColor
+        let save = NSButton(title: "저장", target: self, action: #selector(saveOnly))
+        let saveAI = NSButton(title: "저장하고 Claude 로 정리 · 할 일 뽑기", target: self, action: #selector(saveAndAI)); saveAI.keyEquivalent = "\r"
+        let top = NSStackView(views: [label("카테고리"), category, label("종류"), kind, rec]); top.spacing = 8
+        let bottom = NSStackView(views: [err, NSView(), save, saveAI]); bottom.spacing = 8
+        let col = NSStackView(views: [top, attendees, label("안건"), box(agenda, 50), label("회의 내용"), box(body, 220),
+                                      label("결정 사항"), box(decisions, 60), bottom])
+        col.orientation = .vertical; col.alignment = .leading; col.spacing = 6
+        col.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView = NSView(); panel.contentView!.addSubview(col)
+        let cv = panel.contentView!
+        NSLayoutConstraint.activate([
+            col.topAnchor.constraint(equalTo: cv.topAnchor, constant: 14), col.bottomAnchor.constraint(equalTo: cv.bottomAnchor, constant: -14),
+            col.leadingAnchor.constraint(equalTo: cv.leadingAnchor, constant: 14), col.trailingAnchor.constraint(equalTo: cv.trailingAnchor, constant: -14),
+        ])
+        for v in col.arrangedSubviews where !(v is NSTextField && (v as! NSTextField).isBezeled == false) { v.widthAnchor.constraint(equalTo: col.widthAnchor).isActive = true }
+    }
+
+    func show() { panel.center(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(body) }
+
+    @objc func toggleRec() {
+        if let r = recorder { r.stop(); recorder = nil; tick?.invalidate(); rec.title = "● 다시 녹음"; err.stringValue = "녹음 \(elapsed()) 저장 대기"; return }
+        AVCaptureDevice.requestAccess(for: .audio) { ok in
+            DispatchQueue.main.async {
+                guard ok else { self.err.textColor = .systemRed; self.err.stringValue = "마이크 권한이 없어요 — 시스템 설정 › 개인정보 보호 › 마이크"; return }
+                self.startRec()
+            }
+        }
+    }
+    func startRec() {
+        let u = URL(fileURLWithPath: home + "/.phantom-obsidian/state/meeting-\(Int(Date().timeIntervalSince1970)).m4a")
+        let set: [String: Any] = [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 1,
+                                  AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue]
+        guard let r = try? AVAudioRecorder(url: u, settings: set), r.record() else { err.textColor = .systemRed; err.stringValue = "녹음을 시작 못 했어요"; return }
+        recorder = r; recFile = u; started = Date()
+        err.textColor = .systemRed
+        tick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.rec.title = "■ 녹음 멈춤 \(self.elapsed())"; self.err.stringValue = "● 녹음 중"
+        }
+    }
+    func elapsed() -> String { let t = Int(Date().timeIntervalSince(started)); return String(format: "%d:%02d", t / 60, t % 60) }
+
+    /// 노트를 쓴다. (경로, 내용) 또는 nil
+    func save() -> (String, String)? {
+        recorder?.stop(); recorder = nil; tick?.invalidate()
+        let cat = category.titleOfSelectedItem ?? "기타", k = kind.titleOfSelectedItem ?? "기타"
+        let isProject = vaultProjects().contains(cat)
+        let date = iso.string(from: Date())
+        let dir = vaultPath() + "/3. Resources/01. Meeting/" + cat
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        var name = isProject ? date : "\(date) \(k)"
+        if FileManager.default.fileExists(atPath: "\(dir)/\(name).md") {
+            let hm = DateFormatter(); hm.dateFormat = "HHmm"; name += " " + hm.string(from: Date())
+        }
+        var audioLine = ""
+        if let f = recFile, FileManager.default.fileExists(atPath: f.path) {
+            try? FileManager.default.createDirectory(atPath: dir + "/녹음", withIntermediateDirectories: true)
+            let dst = "\(dir)/녹음/\(name).m4a"
+            try? FileManager.default.moveItem(atPath: f.path, toPath: dst)
+            audioLine = "\n## 녹음\n![[3. Resources/01. Meeting/\(cat)/녹음/\(name).m4a]]\n"
+        }
+        let tag = ["팀 미팅": "team", "데일리 스크럼": "daily", "1on1": "1on1", "배포 얼라인": "deploy"][k] ?? "etc"
+        let link = isProject ? "[[1. Projects/\(cat)/📓 \(cat) Overview|🔗 \(cat)]]" : "[[3. Resources/01. Meeting/\(cat)/📅 \(cat) 회의|📅 \(cat) 회의]]"
+        let people = attendees.stringValue.split(separator: ",").map { "  - " + $0.trimmingCharacters(in: .whitespaces) }.joined(separator: "\n")
+        func lines(_ t: String, _ empty: String) -> String { let x = t.trimmingCharacters(in: .whitespacesAndNewlines); return x.isEmpty ? empty : x }
+        let text = """
+        ---
+        title: \(name)
+        date: \(date)
+        project: \(isProject ? cat : "")
+        tags: [meeting/\(tag)]
+        attendees:
+        \(people.isEmpty ? "  - " : people)
+        created: \(date)
+        ---
+        \(link)
+
+        ## 회의 안건
+        \(lines(agenda.string, "1. "))
+
+        ## 회의 내용
+        \(lines(body.string, ""))
+
+        ## 결정 사항
+        \(lines(decisions.string, "- "))
+        \(audioLine)
+        """
+        let path = "\(dir)/\(name).md"
+        do { try text.write(toFile: path, atomically: true, encoding: .utf8) } catch { err.textColor = .systemRed; err.stringValue = "저장 실패: \(error.localizedDescription)"; return nil }
+        if isProject { var pr = loadPrefs(); pr.lastProject = cat; savePrefs(pr) }
+        return (path, text)
+    }
+    @objc func saveOnly() { if let r = save() { panel.close(); openInObsidian(r.0) } }
+    @objc func saveAndAI() { if let r = save() { panel.close(); onSaved(r.0, r.1) } }
+}
+
+/// 파일을 옵시디언으로 연다 (`obsidian://open?path=`). 옵시디언이 없으면 기본 앱으로.
+func openInObsidian(_ f: String) {
+    var c = URLComponents(); c.scheme = "obsidian"; c.host = "open"; c.queryItems = [URLQueryItem(name: "path", value: f)]
+    if let u = c.url, NSWorkspace.shared.urlForApplication(toOpen: u) != nil { NSWorkspace.shared.open(u) }
+    else { NSWorkspace.shared.open(URL(fileURLWithPath: f)) }
+}
+
 // ── Claude 열기 ─────────────────────────────────────────────
 /// `cd <dir> && claude --model sonnet "<prompt>"` 스크립트. 프롬프트는 heredoc 으로 넣어 따옴표가 안 깨진다.
 func writeClaudeScript(dir: String, prompt: String, model: String = "sonnet", flags: [String] = []) -> String {
@@ -834,6 +995,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 마우스가 블록 위에 있을 때만 창이 클릭을 받는다 — 나머지는 바탕화면으로 통과
         let hv = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.updateHover() }
         RunLoop.main.add(hv, forMode: .common); hover = hv
+        if env["PILE_MEETING_TEST"] != nil { meeting() }              // 시험용: 회의 창 (저장은 누를 때만)
         if let sec = env["PILE_TEST_CLOSE"].flatMap(Double.init) {   // 시험용: N초 뒤 종료
             DispatchQueue.main.asyncAfter(deadline: .now() + sec) {
                 if let s = self.pile?.scene { print("blocks \(s.blocks.count) · skipped \(s.skipped) · queue \(s.queue.count) · scale \(String(format: "%.2f", s.k)) · paused \(self.pile!.view.isPaused)") }
@@ -886,7 +1048,10 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func refresh() {
         stamp = fileStamp()
         items = allItems()
-        pile?.sync(items) { s in s.onMenu = { [weak self] raw, e in self?.contextMenu(raw, e) } }
+        pile?.sync(items) { s in
+            s.onMenu = { [weak self] raw, e in self?.contextMenu(raw, e) }
+            s.onTool = { [weak self] kind in kind == "tool:todo" ? self?.addTodo() : self?.meeting() }
+        }
         let late = items.filter { ($0.late ?? 0) > 0 }.count
         let jira = items.filter { $0.jiraKey != nil }.count
         status.button?.title = "TODO \(items.count - jira)" + (jira > 0 ? " · Jira \(jira)" : "") + (late > 0 ? " 🔴\(late)" : "")
@@ -899,6 +1064,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let vis = menu.addItem(withTitle: "바탕화면에 블록 보이기", action: #selector(toggleVisible), keyEquivalent: "")
         vis.target = self; vis.state = loadPrefs().visible ? .on : .off
         menu.addItem(withTitle: "할 일 추가…", action: #selector(addTodo), keyEquivalent: "n").target = self
+        menu.addItem(withTitle: "회의하기…", action: #selector(meeting), keyEquivalent: "m").target = self
         menu.addItem(withTitle: "새로고침", action: #selector(reload), keyEquivalent: "r").target = self
         let pr = loadPrefs()
         menu.addItem(withTitle: pr.jiraEmail == nil ? "Jira 연결…" : "Jira 연결 바꾸기…" + (jiraNote.isEmpty ? "" : "  (\(jiraNote))"),
@@ -987,6 +1153,18 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc func connectJira() {
         let f = JiraForm(); f.onDone = { [weak self] in self?.pullJira() }
+        forms.append(f); f.show()
+    }
+    /// 회의하기 창. "저장하고 Claude 로 정리" 면 vault 에서 Claude(sonnet)를 열어 정리하고 할 일을 뽑게 한다.
+    @objc func meeting() {
+        let f = MeetingForm()
+        f.onSaved = { [weak self] path, _ in
+            self?.openClaude(in: vaultPath(), prompt: """
+            방금 쓴 회의록을 정리하자: \(path)
+            1) 회의 내용을 안건 · 결정 사항 기준으로 깔끔하게 다듬어 같은 파일에 쓴다 (내가 안 한 말은 지어내지 않는다).
+            2) 나온 할 일을 뽑아서 보여 주고, 중요도 · 마감 · 난이도를 나한테 물은 뒤 `python3 \(vaultRecord) todo` 로 넣는다.
+            """)
+        }
         forms.append(f); f.show()
     }
     @objc func addTodo() {

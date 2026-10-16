@@ -107,7 +107,8 @@ def ensure_todo_pile(st):
     src = PLUGIN / "tools" / "todo-pile" / "Pile.swift"
     if sys.platform != "darwin" or os.environ.get("PHANTOM_NO_TODO_PILE") or not src.is_file():
         return
-    key = hashlib.sha256(src.read_bytes()).hexdigest()[:16]
+    info = src.with_name("Info.plist")
+    key = hashlib.sha256(src.read_bytes() + (info.read_bytes() if info.is_file() else b"")).hexdigest()[:16]
     binary = HOME / "bin" / "todo-pile"
     if not due(st, "todo_pile", key) and binary.exists():
         return
@@ -117,7 +118,11 @@ def ensure_todo_pile(st):
         return
     binary.parent.mkdir(parents=True, exist_ok=True)
     tmp = binary.with_name("todo-pile.new")
-    r = subprocess.run(["swiftc", "-O", str(src), "-o", str(tmp)], capture_output=True, text=True, timeout=900)
+    cmd = ["swiftc", "-O", str(src), "-o", str(tmp)]
+    info = src.with_name("Info.plist")       # 마이크 사용 설명 — 없으면 회의 녹음 때 macOS 가 앱을 죽인다
+    if info.is_file():
+        cmd += ["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", str(info)]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     if r.returncode != 0:
         log("todo-pile 빌드 실패: %s" % r.stderr.strip()[-300:])
         done(st, "todo_pile", False, key)

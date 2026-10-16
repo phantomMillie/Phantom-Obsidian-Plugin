@@ -8,7 +8,7 @@ if [ "$1" = "--uninstall" ]; then
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
   rm -f "$PLIST"; echo "제거 완료"; exit 0
 fi
-mkdir -p bin && swiftc -O Pile.swift -o bin/todo-pile
+mkdir -p bin && swiftc -O Pile.swift -o bin/todo-pile -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Info.plist   # Info.plist = 마이크 사용 설명
 cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
