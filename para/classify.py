@@ -226,6 +226,9 @@ def decide(recs, projs, area_map, topics, rules, use_llm):
             log(f"LLM 실패: {e}")
         else:
             for v in data.get("results", []):
+                if not v.get("kind"):                   # kind 를 빼먹었으면 target 으로 짐작한다
+                    t = v.get("target", "")
+                    v["kind"] = "project" if t in projs else ("resource" if t in topics else ("area" if t and v.get("note_line") else "unknown"))
                 rid = v.get("id")
                 if rid not in {r["id"] for r in todo}:
                     continue

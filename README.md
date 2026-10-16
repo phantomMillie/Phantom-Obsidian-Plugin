@@ -209,7 +209,7 @@ AI 가 작업 · 마일스톤 · 결정을 끝냈다고 보고하는 **같은 �
 
 `para/collect.py` — AI 도구 대화 기록에서 **끝난 사건**만 골라 `<para_inbox>` 에 쌓는다. 자동화 세션(`claude -p` · `codex exec`)은 건너뛴다.
 
-Claude Code 세션이 시작될 때 훅이 3시간에 한 번 뒤에서 LLM 없이 줍고(`--no-llm`), 인박스에 3건 넘게 쌓이면 AI 가 예시를 붙여 **"지난 대화에서 끝난 일 N건이 아직 vault 에 정리 안 됐어요 — 예: 「…」. 맞는 곳에 나눠 넣을까요?"** 하고 묻는다. 승낙하면 그때 `classify.py` 를 돌린다 — 분류(LLM)는 묻지 않고 돌리지 않는다.
+Claude Code 세션이 시작될 때 훅이 **3시간에 한 번 뒤에서 자동으로 정리**한다 — 대화에서 끝난 일을 줍고(`collect.py --no-llm`) → 프로젝트 · 영역 · 자료로 나누고(`classify.py`, LLM) → vault 분배 배치(`devlog_dispatch.py`)로 개발일지 · TODO 에 바로 넣는다. 묻지 않는다.
 
 ```bash
 python3 para/collect.py --dry-run     # 결과만 출력

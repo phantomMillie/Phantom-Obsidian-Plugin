@@ -30,34 +30,33 @@ def bootstrap():
                      stderr=subprocess.DEVNULL, start_new_session=True)
 
 
-PARA_EVERY = 3 * 3600      # 대화 줍기는 3시간에 한 번 (LLM 없이, 1~2초)
-PARA_ASK_AT = 3            # 인박스에 이만큼 쌓이면 사용자에게 분류할지 묻는다
+PARA_EVERY = 3 * 3600      # 3시간에 한 번 뒤에서 정리한다
 
 
-def para_pending():
-    """뒤에서 AI 대화를 줍고(LLM 없음 — 끝 신호 있는 세션만), PARA 인박스에 쌓인 건수와 경로를 돌려준다.
-    분류(LLM)는 여기서 돌리지 않는다 — 사용자에게 물어보고 승낙하면 그때."""
-    collect = HOME / "para" / "collect.py"
+def para_autosort():
+    """뒤에서 PARA 정리 — 세션 시작을 막지 않는다.
+    ① AI 대화에서 끝난 일을 줍고(collect --no-llm) ② 프로젝트 · 영역 · 자료로 나누고(classify, LLM)
+    ③ vault 분배 배치가 있으면 바로 개발일지 · TODO 에 넣는다(devlog_dispatch). 묻지 않는다."""
     st_path = HOME / "state" / "para-nudge.json"
     try:
         st = json.loads(st_path.read_text(encoding="utf-8"))
     except Exception:
         st = {}
     now = time.time()
-    if collect.is_file() and now - st.get("collected", 0) > PARA_EVERY:
-        subprocess.Popen([sys.executable, str(collect), "--no-llm"], cwd=str(HOME), stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        st["collected"] = now
-        st_path.parent.mkdir(parents=True, exist_ok=True)
-        st_path.write_text(json.dumps(st), encoding="utf-8")
+    collect, classify = HOME / "para" / "collect.py", HOME / "para" / "classify.py"
+    if now - st.get("collected", 0) < PARA_EVERY or not (collect.is_file() and classify.is_file()):
+        return
     cfg = load_config(__file__)
-    inbox = pathlib.Path(cfg["vault"]).expanduser() / cfg.get("paths", {}).get("para_inbox", "📥 PARA 인박스.md")
-    try:
-        text = inbox.read_text(encoding="utf-8")
-    except Exception:
-        return 0, inbox, []
-    titles = [ln[3:].strip() for ln in text.splitlines() if ln.startswith("## ")]
-    return text.count("<!-- para-id:"), inbox, titles
+    dispatch = pathlib.Path(cfg["vault"]).expanduser() / ".scripts" / "devlog_dispatch.py"
+    py = sys.executable
+    steps = ['"%s" "%s" --no-llm' % (py, collect), '"%s" "%s" --no-slack' % (py, classify)]
+    if dispatch.is_file():
+        steps.append('cd "%s" && "%s" "%s" --no-slack' % (dispatch.parent.parent, py, dispatch))
+    subprocess.Popen(["/bin/sh", "-c", " ; ".join(steps)], cwd=str(HOME), stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    st["collected"] = now
+    st_path.parent.mkdir(parents=True, exist_ok=True)
+    st_path.write_text(json.dumps(st), encoding="utf-8")
 
 
 def lint():
@@ -126,18 +125,9 @@ def main():
               "- 현재 프로젝트: %s / 영역: %s / 자료 주제: %s\n기록 후 한 줄로만 보고한다.\n"
               % (record, names, areas_s, topics_s))
         try:
-            n, inbox, titles = para_pending()
+            para_autosort()
         except Exception:
-            n, inbox, titles = 0, None, []
-        if n >= PARA_ASK_AT and (HOME / "para" / "classify.py").is_file():
-            ex = ", ".join("「%s」" % t[:30] for t in titles[:3])
-            print("## vault 에 안 들어간 일 (%d건)\n\n"
-                  "지난 AI 대화에서 끝난 일 %d건을 주워 PARA 인박스(`%s`)에 모아 뒀다. 아직 vault 의 제자리(프로젝트 개발일지 · 영역 · 자료)에는 안 들어갔다.\n"
-                  "지금 넣지 않는다 — 먼저 묻는다. 이번 세션 첫 답 끝에, 무엇인지 알 수 있게 예시를 붙여 한 줄로:\n"
-                  "`지난 대화에서 끝난 일 %d건이 아직 vault 에 정리 안 됐어요 — 예: %s. 프로젝트 개발일지 · 영역 · 자료 중 맞는 곳에 나눠 넣을까요?`\n"
-                  "(그 답에 이미 다른 질문이 있으면 다음 답에서.) 승낙하면 `python3 %s --no-slack` 을 돌리고 어디로 몇 건 갔는지 한 줄로 알린다. "
-                  "거절하면 이 세션에선 다시 묻지 않는다.\n"
-                  % (n, n, inbox, n, ex or "(제목 없음)", HOME / "para" / "classify.py"))
+            pass
         if not bad:
             return
 

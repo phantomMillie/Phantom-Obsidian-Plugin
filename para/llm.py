@@ -119,4 +119,8 @@ def _cli(prompt):
 def call(prompt, schema):
     """(JSON 객체, 'api' | 'cli'). 실패하면 RuntimeError. 부르기 전에 llm_allowed() 를 확인할 것."""
     key = api_key()
-    return (_api(prompt, schema, key), "api") if key else (_cli(prompt), "cli")
+    if key:
+        return _api(prompt, schema, key), "api"
+    # CLI 는 스키마를 강제하지 못한다 — 필드 이름을 빼먹지 않게 스키마를 프롬프트에 붙인다
+    return _cli(prompt + "\n\n출력은 이 JSON 스키마를 그대로 따른다(필드 이름 · 필수 필드 전부):\n"
+                + json.dumps(schema, ensure_ascii=False)), "cli"
