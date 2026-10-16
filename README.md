@@ -1,13 +1,13 @@
-# Phantom Obsidian Framework
+# Millie Obsidian Kit
 
-Phantom Obsidian vault 작업 방식(팬텀 플로우 · 정책 추출 · 용어집)을 **이 PC의 모든 코딩 에이전트**가 쓰게 하는 프레임워크. 개인용.
+Phantom Obsidian vault 작업 방식(팬텀 플로우 · 정책 추출 · 용어집)을 **이 PC의 모든 코딩 에이전트**가 쓰게 하는 프레임워크. 바탕화면 TODO 블록(`plugin/tools/todo-pile`)도 같이 깔린다. 팀에서 같이 쓴다.
 
-> **Obsidian 커뮤니티 플러그인이 아니다.** 이름에 `Obsidian-Plugin` 이 들어가지만 `.obsidian/plugins/` 에 넣는 물건이 아니다.
+> **Obsidian 커뮤니티 플러그인이 아니다.** 이름에 Obsidian 이 들어가지만 `.obsidian/plugins/` 에 넣는 물건이 아니다.
 > vault 마다 설치하는 게 아니라 **PC 당 한 번** `~/.phantom-obsidian` 에 설치하고, 연결되는 vault 는 `config.json` 의 `vault` 하나다.
 > AI 에이전트에게 설치를 시킬 때는 [`AGENTS.md`](AGENTS.md) 를 먼저 읽게 하라.
 
 ```bash
-git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
+git clone https://github.com/phantomMillie/millie-obsidian-kit.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
 ./install.sh --init                                # 새 vault 를 ~/.phantom-obsidian/vault 에 만들면서 설치
 # 이미 vault 가 있으면: cp config.example.json config.json  →  "vault" 수정  →  ./install.sh
@@ -103,7 +103,7 @@ vault-init      새 vault 생성 (PARA 폴더 · AGENTS.md · 템플릿 · 점�
 **vault 를 처음 만들 때 (새 컴퓨터 포함)** — 플러그인이 vault 골격을 가진다.
 
 ```bash
-git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
+git clone https://github.com/phantomMillie/millie-obsidian-kit.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
 ./install.sh --init                                  # vault 생성 + config.json + PC 연결
 ```
@@ -122,7 +122,7 @@ vault 는 `~/.phantom-obsidian/vault` 에 생긴다 — 프레임워크 홈 안�
 **이미 vault 가 있을 때**
 
 ```bash
-git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
+git clone https://github.com/phantomMillie/millie-obsidian-kit.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
 cp config.example.json config.json      # "vault" 값 수정
 ./install.sh

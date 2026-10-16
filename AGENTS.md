@@ -1,6 +1,6 @@
 # 이 레포를 설치해 달라는 요청을 받았을 때
 
-**이것은 Obsidian 커뮤니티 플러그인이 아니다.** 이름에 `Obsidian-Plugin` 이 들어가지만, Obsidian 앱의
+**이것은 Obsidian 커뮤니티 플러그인이 아니다.** 이름에 Obsidian 이 들어가지만, Obsidian 앱의
 `.obsidian/plugins/` 에 넣는 물건이 아니다. vault 를 고르는 질문도 하지 마라.
 
 이것은 **PC 단위로 한 번 설치하는 AI 에이전트 프레임워크**다. 설치하면 Claude Code · Codex CLI ·
@@ -19,7 +19,7 @@ vault 를 새로 만드는 경우 — **위치를 묻지 마라.** 기본값은 
 `./install.sh --init <폴더>` 로 폴더를 준다.
 
 ```bash
-git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
+git clone https://github.com/phantomMillie/millie-obsidian-kit.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
 ./install.sh --init
 ```
@@ -27,7 +27,7 @@ cd ~/.phantom-obsidian
 이미 vault 가 있는 경우:
 
 ```bash
-git clone https://github.com/phantomMillie/Phantom-Obsidian-Plugin.git ~/.phantom-obsidian
+git clone https://github.com/phantomMillie/millie-obsidian-kit.git ~/.phantom-obsidian
 cd ~/.phantom-obsidian
 cp config.example.json config.json      # "vault" 값을 기존 vault 절대 경로로 수정
 ./install.sh
