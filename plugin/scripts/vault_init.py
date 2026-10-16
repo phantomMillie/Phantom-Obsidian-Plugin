@@ -26,8 +26,6 @@ MANAGED = [".scripts/project_lint.py", ".claude/commands/obsidian-project-scope.
 CONFIG_PATHS = {
     "projects": "1. Projects", "areas": "2. Areas", "resources": "3. Resources",
     "archives": "4. Archives", "store": "5. Store",
-    "method_doc": "3. Resources/00. Reference/00. 기초자료/밀리 플로우.md",
-    "meetings": "3. Resources/01. Meeting", "flow_output": "3. Resources/99. QA",
     "glossary": "3. Resources/02. 용어집", "glossary_index": "3. Resources/02. 용어집/📖 용어집.md",
     "policy_index": "3. Resources/00. Reference/02. 정책/🗂️ 정책 인덱스.md",
     "devlog_inbox": "3. Resources/03. 개발일지/📥 로그 인박스.md",

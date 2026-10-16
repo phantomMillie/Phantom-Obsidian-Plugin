@@ -99,6 +99,10 @@ echo "생성 $REPO/MILLIE.md"
 
 # 2. 스킬 링크
 mkdir -p "$HOME/.agents/skills"
+for l in "$HOME"/.agents/skills/*; do              # 레포에서 빠진 스킬로 가는 링크는 걷어낸다
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in "$REPO"/*) [ -e "$l" ] || { rm "$l" && echo "정리 $l"; } ;; esac
+done
 for s in "$REPO"/plugin/skills/*/; do
   l="$HOME/.agents/skills/$(basename "$s")"
   if [ -e "$l" ] && [ ! -L "$l" ]; then echo "건너뜀 $l — 링크 아닌 파일이 이미 있음" >&2; continue; fi

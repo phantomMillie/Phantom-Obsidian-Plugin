@@ -42,7 +42,7 @@
 | 🧠 **어디서든 같은 지침** | Claude Code · Codex · Gemini 등 이 PC 의 모든 에이전트가, 어느 작업 폴더에서든 같은 전역 지침과 스킬을 읽는다 |
 | 🧱 **바탕화면 TODO** | 할 일이 블록이 되어 바탕화면에 떨어져 쌓인다. 끌고, 오른쪽 클릭으로 Claude 를 열어 바로 해결한다 |
 | 📝 **끝난 그 자리에서 기록** | 작업 · 마일스톤 · 결정을 끝낸 같은 턴에 vault 에 바로 쓴다 — 개발일지 한 줄, 마일스톤 체크, 할 일 |
-| 🧭 **밀리 플로우 스킬** | 코드 → 소스 플로우 → 정책 QA. 정책 전수 추출 · 용어집도 같은 규칙으로 |
+| 🧭 **정책 · 용어 스킬** | 코드에 흩어진 정책을 영역별로 전수 추출하고, 용어집을 같은 규칙으로 쌓는다 |
 | 🛡️ **프로젝트 가드** | 완료 조건 · 마일스톤 · 완료일이 비면 일이 오갈 때마다 리마인드. 할 일은 중요도 · 마감 · 난이도 없이 못 넣는다 |
 
 ## 🚀 빠른 시작
@@ -100,17 +100,11 @@ flowchart LR
 
 - **PC 종속** — 한 번 설치하면 어느 AI · 어느 작업 폴더 · 어느 세션에서든 같은 지침과 스킬이 로드된다
 - **본체는 표준 포맷** — 방법은 [Agent Skills](https://agentskills.io/specification)(`SKILL.md`), vault 규칙은 vault 루트 `AGENTS.md`. 특정 AI 전용 문법을 본체에 넣지 않는다
-- **규칙 원본은 vault 에** — `AGENTS.md` · `밀리 플로우.md`. 스킬은 절차 + 완료 검사만. 규칙이 바뀌면 원본만 고친다
+- **규칙 원본은 vault 에** — `AGENTS.md`. 스킬은 절차 + 완료 검사만. 규칙이 바뀌면 원본만 고친다
 
 ## 🧩 스킬
 
 ```
-flow-draft      1단계   코드 → 🧭 소스 플로우 (분기형 mermaid, 모호한 곳 🧐)
-   ↓
-flow-fill       2단계   🧐 하나씩 채움 (본문 ↔ 📌 미확정 1:1)
-   ↓  🧐 0개
-qa-promote      3~5단계 ✅ 정책 QA (결정 테이블 · 케이스 ID · given · 자동화 매핑)
-
 policy-extract  코드 정책 영역별 전수 → ✅/⚠️/🚫 + 파일:라인 + mermaid
 glossary-add    용어집 3줄 고정 + 📖 인덱스 갱신
 vault-record    작업·마일스톤이 끝난 턴에 vault 에 바로 기록 (개발일지 · 체크 · 할 일 · 영역 · 자료)
@@ -164,11 +158,7 @@ vault 마다 다른 값은 전부 여기. 코드 · 스킬에는 `<키>` 만 있
 ```
 vault                 vault 절대 경로
 paths.projects ...    PARA 폴더 (projects · areas · resources · archives · store)
-paths.method_doc      밀리 플로우 방법론 문서            (flow-draft · qa-promote)
-paths.meetings        회의록 폴더                        (flow-draft)
-paths.flow_output     플로우 · QA 문서 기본 위치          (flow-draft)
-paths.qa_example      완성형 정책 QA 예시 (선택)          (qa-promote)
-paths.glossary        용어집 폴더 · glossary_index 인덱스 (glossary-add · qa-promote)
+paths.glossary        용어집 폴더 · glossary_index 인덱스 (glossary-add)
 paths.policy_index    정책 인덱스 문서                    (policy-extract)
 paths.para_inbox      PARA 인박스 · para_history 이동 히스토리
 paths.devlog_inbox    분류기가 프로젝트 사건을 넘길 인박스 · issue_inbox 이슈용

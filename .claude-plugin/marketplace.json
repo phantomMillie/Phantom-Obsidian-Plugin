@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "millie-obsidian",
-  "description": "Millie Obsidian vault 작업 방식 — 밀리 플로우 · 정책 추출 · 용어집 (Agent Skills 표준)",
+  "description": "Millie Obsidian vault 작업 방식 — 실시간 기록 · 정책 추출 · 용어집 (Agent Skills 표준)",
   "owner": {
     "name": "millie"
   },
   "plugins": [
     {
       "name": "millie-vault",
-      "description": "밀리 플로우 · 정책 추출 · 용어집을 어느 폴더에서든 vault 규칙대로 작성한다.",
+      "description": "실시간 기록 · 정책 추출 · 용어집을 어느 폴더에서든 vault 규칙대로 작성한다.",
       "source": "./plugin",
       "category": "productivity"
     }
