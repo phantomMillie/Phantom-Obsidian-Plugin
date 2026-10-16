@@ -393,6 +393,16 @@ def main():
             use_llm, blocked = False, why
             log(f"LLM 차단: {why}")
 
+    # 같은 대화가 여러 번 주워졌으면(대화가 길어 수집이 나눠 봄) 마지막 것만 넣고 앞의 것은 합친 것으로 친다
+    def convo(r):
+        m = re.search(r"`([^`]+)`", r["fields"].get("기록", ""))
+        return m.group(1) if m else r["id"]
+    last = {}
+    for r in recs:
+        last[convo(r)] = r["id"]
+    dups = [r for r in recs if not r["approve"] and last[convo(r)] != r["id"]]
+    recs = [r for r in recs if r not in dups]
+
     # 승인 체크된 대기 사건은 판정 없이 그 영역으로
     approved = [r for r in recs if r["approve"] and r["approve"][0]]
     waiting = [r for r in recs if r["approve"] and not r["approve"][0]]
@@ -459,6 +469,7 @@ def main():
                 path.write_text(RESOURCE_TEMPLATE.format(today=today, topic=kind[1]), encoding="utf-8")
         add_note_line(path, bullet)
 
+    rows += [(r, "같은 대화의 뒤 기록에 합침", "합침") for r in dups]
     moved = [(r, dest, how) for r, dest, how in rows if "승인 대기" not in dest]
     if moved or rows:
         hist = hist_path.read_text(encoding="utf-8").rstrip("\n") if hist_path.exists() else history_header(today).rstrip("\n")

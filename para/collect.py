@@ -385,7 +385,19 @@ def one_line(text, limit=400):
     return s if len(s) <= limit else s[:limit - 1] + "…"
 
 
+def session_project(path):
+    """프롬프트 입력 훅이 정해 둔 이 대화의 프로젝트 (state/session-projects.json). 없으면 None."""
+    try:
+        sp = json.loads((STATE_DIR / "session-projects.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return ((sp.get("sessions") or {}).get(pathlib.Path(path).stem) or {}).get("project")
+
+
 def render_record(r, now):
+    proj = session_project(r["path"])
+    if proj:                                    # 대화를 시작할 때 정한 프로젝트가 있으면 그게 피쳐 — 분류가 추측하지 않는다
+        r = dict(r, feature=proj)
     r = dict(r, title=one_line(r["title"], 120), feature=one_line(r["feature"], 80), summary=one_line(r["summary"]),
              resolved=[one_line(x, 160) for x in r["resolved"]], unresolved=[one_line(x, 160) for x in r["unresolved"]])
     sig = SIGNAL_LABEL.get(r["end_signal"], r["end_signal"])

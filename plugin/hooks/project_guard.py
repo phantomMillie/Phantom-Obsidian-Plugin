@@ -59,6 +59,71 @@ def para_autosort():
     st_path.write_text(json.dumps(st), encoding="utf-8")
 
 
+# ── 대화 ↔ 프로젝트 (프롬프트 입력 때 LLM 없이 정한다) ─────────────
+# 정한 값은 state/session-projects.json 에 둔다. 나중에 대화를 주울 때(collect) 이 값을 피쳐로 붙여
+# 분류(classify)가 추측 없이 그 프로젝트로 보낸다. 기록은 여전히 일이 끝났을 때.
+SP_FILE = HOME / "state" / "session-projects.json"
+SKIP = {"미분류", "Daily"}                                 # 분류용 칸은 프로젝트로 정하지 않는다
+
+
+def project_names():
+    cfg = load_config(__file__)
+    root = pathlib.Path(cfg["vault"]).expanduser() / cfg.get("paths", {}).get("projects", "1. Projects")
+    import re as _re
+    names = [_re.sub(r"^\d+\.\s*", "", d.name) for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
+    return [n for n in names if n not in SKIP], pathlib.Path(cfg["vault"]).expanduser()
+
+
+def guess_project(prompt, cwd, names, sp, prev, vault):
+    """(프로젝트, 근거) 또는 (None, None). 프롬프트에 이름 > 같은 대화에서 앞서 정함 > 대화 폴더."""
+    for n in sorted(names, key=len, reverse=True):          # 긴 이름 먼저 — "뷰어 통합 2차" 가 "뷰어" 보다 앞
+        if len(n) >= 2 and n in prompt:
+            return n, "프롬프트에 이름"
+    if prev in names:
+        return prev, "이 대화에서 앞서 정함"
+    if cwd:
+        try:
+            prefs = json.loads((HOME / "state" / "todo-pile.json").read_text(encoding="utf-8"))
+        except Exception:
+            prefs = {}
+        dirs = {path: proj for proj, path in (prefs.get("dirs") or {}).items() if proj in names}
+        dirs.update({path: proj for path, proj in (sp.get("dirs") or {}).items() if proj in names})
+        hits = [(len(path), proj) for path, proj in dirs.items() if cwd == path or cwd.startswith(path.rstrip("/") + "/")]
+        if hits:
+            return max(hits)[1], "대화 폴더"
+    return None, None
+
+
+def session_project(data):
+    """이 대화의 프로젝트를 정하고, 처음 정했거나 바뀌었을 때만 AI 에게 한 줄로 알린다."""
+    sid = data.get("session_id")
+    if not sid:
+        return
+    names, vault = project_names()
+    try:
+        sp = json.loads(SP_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        sp = {}
+    sessions = sp.setdefault("sessions", {})
+    prev = (sessions.get(sid) or {}).get("project")
+    cwd = (data.get("cwd") or "").rstrip("/")
+    proj, how = guess_project(data.get("prompt") or "", cwd, names, sp, prev, vault)
+    if not proj:
+        return
+    # 폴더를 배운다 — 이름으로 정했고, 홈 · vault · 이 프레임워크 폴더가 아닐 때만
+    plain = {str(pathlib.Path.home()), str(vault), str(HOME)}
+    if how == "프롬프트에 이름" and cwd and cwd not in plain and not cwd.startswith(str(vault) + "/"):
+        sp.setdefault("dirs", {}).setdefault(cwd, proj)
+    sessions[sid] = {"project": proj, "how": how, "at": int(time.time())}
+    cutoff = time.time() - 14 * 86400                      # 2주 지난 대화는 지운다
+    sp["sessions"] = {k: v for k, v in sessions.items() if v.get("at", 0) >= cutoff}
+    SP_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SP_FILE.write_text(json.dumps(sp, ensure_ascii=False), encoding="utf-8")
+    if proj != prev:
+        print("<para-project>이 대화의 프로젝트: `%s` (근거: %s). 끝난 일을 기록할 때(devlog · todo · tick) 이 프로젝트로 한다. "
+              "사용자가 다른 프로젝트 일이라고 하면 그쪽으로.</para-project>" % (proj, how))
+
+
 def lint():
     cfg = load_config(__file__)
     vault = pathlib.Path(cfg["vault"]).expanduser()
@@ -95,6 +160,10 @@ def main():
     except Exception:
         data = {}
     event = data.get("hook_event_name") or ("UserPromptSubmit" if data.get("prompt") else "SessionStart")
+    try:
+        session_project(data)
+    except Exception:
+        pass
     if event == "SessionStart":
         try:
             bootstrap()
