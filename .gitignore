@@ -5,3 +5,4 @@ state/
 __pycache__/
 vault/
 plugin/tools/*/bin/
+bin/

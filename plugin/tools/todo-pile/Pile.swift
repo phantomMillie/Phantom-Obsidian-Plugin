@@ -21,6 +21,18 @@ let iso: DateFormatter = {
 func today() -> Date { cal.startOfDay(for: Date()) }
 func days(_ a: Date, _ b: Date) -> Int { cal.dateComponents([.day], from: cal.startOfDay(for: a), to: cal.startOfDay(for: b)).day ?? 0 }
 
+/// vault_record.py 위치 — 레포(plugin/scripts) → 예전 자리(scripts) → 플러그인 캐시 중 가장 최근.
+func vaultRecordPath() -> String {
+    let fm = FileManager.default
+    for c in [home + "/.phantom-obsidian/plugin/scripts/vault_record.py", home + "/.phantom-obsidian/scripts/vault_record.py"] where fm.fileExists(atPath: c) { return c }
+    let cache = home + "/.claude/plugins/cache"
+    let found = (fm.enumerator(atPath: cache)?.compactMap { $0 as? String } ?? [])
+        .filter { $0.hasSuffix("scripts/vault_record.py") }.map { cache + "/" + $0 }
+        .max { ((try? fm.attributesOfItem(atPath: $0)[.modificationDate] as? Date) ?? .distantPast) ?? .distantPast
+             < ((try? fm.attributesOfItem(atPath: $1)[.modificationDate] as? Date) ?? .distantPast) ?? .distantPast }
+    return found ?? home + "/.phantom-obsidian/plugin/scripts/vault_record.py"
+}
+
 func vaultPath() -> String {
     if let v = env["PHANTOM_VAULT"] { return v }
     if let d = FileManager.default.contents(atPath: home + "/.phantom-obsidian/config.json"),
@@ -652,7 +664,7 @@ final class AddForm: NSObject {
         guard let proj = project.titleOfSelectedItem else { err.stringValue = "프로젝트를 골라 주세요."; return }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        p.arguments = [home + "/.phantom-obsidian/scripts/vault_record.py", "todo", "--project", proj, "--text", t,
+        p.arguments = [vaultRecord, "todo", "--project", proj, "--text", t,
                        "--importance", ["상", "중", "하"][importance.selectedSegment],
                        "--due", iso.string(from: due.dateValue), "--effort", ["⚡", "🔸", "🧱"][effort.selectedSegment]]
         let pipe = Pipe(); p.standardError = pipe; p.standardOutput = Pipe()
@@ -774,7 +786,7 @@ func writeClaudeScript(dir: String, prompt: String, model: String = "sonnet", fl
     return script
 }
 
-let vaultRecord = home + "/.phantom-obsidian/scripts/vault_record.py"
+let vaultRecord = vaultRecordPath()
 
 /// "AI 로 수정하기" 첫 메시지 — vault 에서 Ghostty 로 연 claude 에게 보낸다. 수정사항은 다음 답변으로 준다.
 func editPrompt(_ it: Item) -> String {
