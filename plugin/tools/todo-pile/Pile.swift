@@ -170,7 +170,8 @@ struct Prefs: Codable {
     var jiraSite: String? = nil      // 예: 회사.atlassian.net
     var jiraEmail: String? = nil
     var jiraShow: [String]? = nil    // 블록으로 떨어뜨릴 Jira 상태 (없으면 기본값)
-    var jiraMe: Bool? = nil          // 내 이슈도 가져올지 (없으면 켬)
+    var hidden: [String]? = nil      // 숨긴 블록들 (Item.raw) — 파일엔 그대로, 블록 · 목록에서만 뺀다
+    var jiraMe: Bool? = nil         // 내 이슈도 가져올지 (없으면 켬)
     var jiraPeople: [JiraPerson]? = nil   // 같이 가져올 다른 사람들
     var colors: [String: [Double]]? = nil   // 프로젝트 → [색상(0~1), 밝기 단계(0·1)] — 한 번 정하면 안 바뀐다
 }
@@ -1061,7 +1062,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var jiraTimer: Timer?
     var jiraNote = ""              // 마지막 Jira 가져오기 결과 (메뉴에 보인다)
 
-    func allItems() -> [Item] { loadItems() + loadJiraCache() }
+    func everyItem() -> [Item] { loadItems() + loadJiraCache() }
+    func allItems() -> [Item] { let h = Set(loadPrefs().hidden ?? []); return everyItem().filter { !h.contains($0.raw) } }
 
     /// Jira 를 가져와 바뀌었으면 블록에 반영 (10분마다 · 새로고침 · 연결 직후).
     func pullJira() {
@@ -1196,6 +1198,17 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let am = NSMenuItem(title: "Jira 담당자 — " + ((pr.jiraMe ?? true) ? "나" : "") + (n > 0 ? ((pr.jiraMe ?? true) ? " + " : "") + "\(n)명" : ""), action: nil, keyEquivalent: "")
             am.submenu = pm; menu.addItem(am)
         }
+        let hiddenNow = everyItem().filter { Set(pr.hidden ?? []).contains($0.raw) }
+        if !hiddenNow.isEmpty {
+            let hm = NSMenu()
+            for it in hiddenNow {
+                let mi = hm.addItem(withTitle: it.text.count > 46 ? String(it.text.prefix(46)) + "…" : it.text, action: #selector(unhideItem(_:)), keyEquivalent: "")
+                mi.target = self; mi.representedObject = it.raw
+            }
+            hm.addItem(.separator())
+            hm.addItem(withTitle: "모두 다시 보이기", action: #selector(unhideAll), keyEquivalent: "").target = self
+            let hi = NSMenuItem(title: "숨긴 블록 \(hiddenNow.count)개", action: nil, keyEquivalent: ""); hi.submenu = hm; menu.addItem(hi)
+        }
         menu.addItem(.separator())
         let sorted = items.sorted { pressure($0) > pressure($1) }
         for it in sorted.prefix(30) {
@@ -1223,6 +1236,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let proj = it.project ?? "미분류"
         if it.jiraKey != nil {
             add("Jira 에서 열기", #selector(openJira(_:)))
+            add("이 블록 숨기기", #selector(hideItem(_:)))
             if let d = loadPrefs().dirs[proj] { add("Claude 로 해결하기 — \((d as NSString).lastPathComponent)", #selector(solve(_:))) }
             else { add("Claude 로 해결하기 — 코드 폴더 고르기…", #selector(solve(_:))) }
             m.addItem(.separator())
@@ -1233,6 +1247,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else { add("Claude 로 해결하기 — 코드 폴더 고르기…", #selector(solve(_:))) }
         add("AI 로 수정하기", #selector(editWithAI(_:)))
         add("완료", #selector(done(_:)))
+        add("이 블록 숨기기", #selector(hideItem(_:)))
         add("마감 · 중요도 정하기…", #selector(setDue(_:)))
         add("버리기", #selector(drop(_:)))
         m.addItem(.separator())
@@ -1265,6 +1280,16 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let i = show.firstIndex(of: st) { show.remove(at: i) } else { show.append(st) }
         pr.jiraShow = show; savePrefs(pr); refresh()
     }
+    @objc func hideItem(_ s: NSMenuItem) {
+        guard let r = s.representedObject as? String else { return }
+        var pr = loadPrefs(); var h = pr.hidden ?? []; if !h.contains(r) { h.append(r) }
+        pr.hidden = h; savePrefs(pr); refresh()
+    }
+    @objc func unhideItem(_ s: NSMenuItem) {
+        var pr = loadPrefs(); pr.hidden = (pr.hidden ?? []).filter { $0 != (s.representedObject as? String) }
+        savePrefs(pr); refresh()
+    }
+    @objc func unhideAll() { var pr = loadPrefs(); pr.hidden = nil; savePrefs(pr); refresh() }
     @objc func toggleJiraMe() {
         var pr = loadPrefs(); pr.jiraMe = !(pr.jiraMe ?? true); savePrefs(pr); pullJira()
     }
