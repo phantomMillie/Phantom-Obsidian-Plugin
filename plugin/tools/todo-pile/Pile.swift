@@ -71,6 +71,7 @@ struct Item {
     let postponed: Int
     var jiraKey: String? = nil     // Jira 이슈면 키 (ABC-123)
     var status: String? = nil      // Jira 상태 (진행 중 …)
+    var assignee: String? = nil    // Jira 담당자 이름 (나 말고 다른 사람 이슈일 때 카드에 보인다)
     var age: Int { days(origin, today()) }
     var late: Int? { due.map { days($0, today()) } }   // >0 지남, 0 오늘, <0 남음
 }
@@ -161,6 +162,7 @@ func withMarkers(_ l: String, importance: String, due: Date, postponed: Int) -> 
 }
 
 // ── 설정 (보이기 · 프로젝트별 코드 폴더) ──────────────────────
+struct JiraPerson: Codable, Equatable { var id: String; var name: String }   // id = Atlassian accountId
 struct Prefs: Codable {
     var visible = true
     var dirs: [String: String] = [:]     // 프로젝트 → Claude 를 열 코드 폴더
@@ -168,6 +170,8 @@ struct Prefs: Codable {
     var jiraSite: String? = nil      // 예: 회사.atlassian.net
     var jiraEmail: String? = nil
     var jiraShow: [String]? = nil    // 블록으로 떨어뜨릴 Jira 상태 (없으면 기본값)
+    var jiraMe: Bool? = nil          // 내 이슈도 가져올지 (없으면 켬)
+    var jiraPeople: [JiraPerson]? = nil   // 같이 가져올 다른 사람들
     var colors: [String: [Double]]? = nil   // 프로젝트 → [색상(0~1), 밝기 단계(0·1)] — 한 번 정하면 안 바뀐다
 }
 let jiraShowDefault = ["할 일", "해야 할 일", "진행 중", "PROGRESS"]
@@ -234,7 +238,8 @@ func jiraItems(_ data: Data, site: String) -> [Item]? {
                     project: ((f["project"] as? [String: Any])?["key"] as? String) ?? "Jira",
                     text: "\(key) " + ((f["summary"] as? String) ?? ""), importance: imp,
                     due: (f["duedate"] as? String).flatMap { iso.date(from: $0) }, postponed: 0,
-                    jiraKey: key, status: (f["status"] as? [String: Any])?["name"] as? String)
+                    jiraKey: key, status: (f["status"] as? [String: Any])?["name"] as? String,
+                    assignee: (f["assignee"] as? [String: Any])?["displayName"] as? String)
     }
 }
 
@@ -253,10 +258,13 @@ func loadJiraCache() -> [Item] {
 /// 나한테 할당된 미완료 이슈를 가져와 캐시에 쓴다. 결과(성공 여부, 알림 말)는 메인 스레드로.
 func fetchJira(_ done: @escaping (Bool, String) -> Void) {
     let pr = loadPrefs()
+    // 담당자: 나(기본) + 고른 사람들
+    let who = ((pr.jiraMe ?? true) ? ["currentUser()"] : []) + (pr.jiraPeople ?? []).map { "\"\($0.id)\"" }
+    if who.isEmpty { try? Data(#"{"issues":[]}"#.utf8).write(to: URL(fileURLWithPath: jiraCache)); done(true, "담당자 없음"); return }
     guard let site = pr.jiraSite, let email = pr.jiraEmail, let token = keychainGet(email),
           let req = jiraRequest(site: site, email: email, token: token, path: "/rest/api/3/search/jql", query: [
-              URLQueryItem(name: "jql", value: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"),
-              URLQueryItem(name: "fields", value: "summary,status,project,issuetype,duedate,priority,created,updated"),
+              URLQueryItem(name: "jql", value: "assignee in (\(who.joined(separator: ", "))) AND statusCategory != Done ORDER BY updated DESC"),
+              URLQueryItem(name: "fields", value: "summary,status,project,issuetype,duedate,priority,created,updated,assignee"),
               URLQueryItem(name: "maxResults", value: "100")]) else { done(false, "Jira 연결 안 됨"); return }
     URLSession.shared.dataTask(with: req) { data, resp, err in
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -339,6 +347,7 @@ func makeSpec(_ it: Item, echo: Int, k: CGFloat, color: NSColor) -> Spec {
     let f = min(24, max(12, 11 + p * 0.85)) * k
     let (f1, f2) = fonts(f)
     var subParts = [it.project ?? "미분류"] + (it.status.map { [$0] } ?? []) + ["\(it.age)일째"]
+    if it.jiraKey != nil, let a = it.assignee, loadPrefs().jiraPeople?.contains(where: { $0.name == a }) == true { subParts.insert(a, at: 1) }   // 남의 이슈엔 담당자
     if it.due == nil { subParts.append("마감 없음") } else if let late = it.late, late < -3 { subParts.append("마감 \(-late)일 남음") }   // 3일 안쪽은 배지가 말한다
     if let i = it.importance { subParts.append("중요도 \(i)") }
     if it.postponed > 0 { subParts.append("\(it.postponed)번 미룸") }
@@ -1173,6 +1182,19 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             let jm = NSMenuItem(title: "Jira 상태 — \(all.filter { show.contains($0.status ?? "") }.count) / \(all.count)건", action: nil, keyEquivalent: "")
             jm.submenu = sm; menu.addItem(jm)
+            // Jira 담당자 고르기 (나 · 다른 사람)
+            let pm = NSMenu()
+            let me = pm.addItem(withTitle: "나", action: #selector(toggleJiraMe), keyEquivalent: "")
+            me.target = self; me.state = (pr.jiraMe ?? true) ? .on : .off
+            for p in pr.jiraPeople ?? [] {
+                let mi = pm.addItem(withTitle: p.name, action: #selector(removeJiraPerson(_:)), keyEquivalent: "")
+                mi.target = self; mi.representedObject = p.id; mi.state = .on; mi.toolTip = "누르면 뺀다"
+            }
+            pm.addItem(.separator())
+            pm.addItem(withTitle: "사람 추가…", action: #selector(addJiraPerson), keyEquivalent: "").target = self
+            let n = (pr.jiraPeople ?? []).count
+            let am = NSMenuItem(title: "Jira 담당자 — " + ((pr.jiraMe ?? true) ? "나" : "") + (n > 0 ? ((pr.jiraMe ?? true) ? " + " : "") + "\(n)명" : ""), action: nil, keyEquivalent: "")
+            am.submenu = pm; menu.addItem(am)
         }
         menu.addItem(.separator())
         let sorted = items.sorted { pressure($0) > pressure($1) }
@@ -1242,6 +1264,50 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var pr = loadPrefs(); var show = pr.jiraShow ?? jiraShowDefault
         if let i = show.firstIndex(of: st) { show.remove(at: i) } else { show.append(st) }
         pr.jiraShow = show; savePrefs(pr); refresh()
+    }
+    @objc func toggleJiraMe() {
+        var pr = loadPrefs(); pr.jiraMe = !(pr.jiraMe ?? true); savePrefs(pr); pullJira()
+    }
+    @objc func removeJiraPerson(_ s: NSMenuItem) {
+        var pr = loadPrefs(); pr.jiraPeople = (pr.jiraPeople ?? []).filter { $0.id != (s.representedObject as? String) }
+        savePrefs(pr); pullJira()
+    }
+    /// 이름 · 이메일로 사람을 찾아 담당자에 더한다.
+    @objc func addJiraPerson() {
+        let pr = loadPrefs()
+        guard let site = pr.jiraSite, let email = pr.jiraEmail, let token = keychainGet(email) else { connectJira(); return }
+        let ask = NSAlert(); ask.messageText = "Jira 담당자 추가"; ask.informativeText = "이름이나 이메일 일부를 입력하세요."
+        let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24)); ask.accessoryView = tf
+        ask.addButton(withTitle: "찾기"); ask.addButton(withTitle: "취소")
+        NSApp.activate(ignoringOtherApps: true)
+        guard ask.runModal() == .alertFirstButtonReturn else { return }
+        let q = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, let req = jiraRequest(site: site, email: email, token: token, path: "/rest/api/3/user/search",
+                                                 query: [URLQueryItem(name: "query", value: q), URLQueryItem(name: "maxResults", value: "20")]) else { return }
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let found = (data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? [])
+                .filter { ($0["accountType"] as? String ?? "atlassian") == "atlassian" && ($0["active"] as? Bool ?? true) }
+                .compactMap { u -> JiraPerson? in
+                    guard let id = u["accountId"] as? String, let n = u["displayName"] as? String else { return nil }
+                    return JiraPerson(id: id, name: n)
+                }
+            DispatchQueue.main.async {
+                let box = NSAlert(); NSApp.activate(ignoringOtherApps: true)
+                guard code == 200, !found.isEmpty else {
+                    box.messageText = code == 200 ? "찾은 사람이 없습니다" : "검색 실패 (응답 \(code))"; box.runModal(); return
+                }
+                box.messageText = "누구를 추가할까요?"
+                let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 26))
+                pop.addItems(withTitles: found.map { $0.name }); box.accessoryView = pop
+                box.addButton(withTitle: "추가"); box.addButton(withTitle: "취소")
+                guard box.runModal() == .alertFirstButtonReturn else { return }
+                let p = found[pop.indexOfSelectedItem]
+                var cur = loadPrefs(); var list = cur.jiraPeople ?? []
+                if !list.contains(where: { $0.id == p.id }) { list.append(p) }
+                cur.jiraPeople = list; savePrefs(cur); self.pullJira()
+            }
+        }.resume()
     }
     @objc func connectJira() {
         let f = JiraForm(); f.onDone = { [weak self] in self?.pullJira() }
