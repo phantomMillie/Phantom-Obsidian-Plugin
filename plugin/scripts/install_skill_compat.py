@@ -127,6 +127,25 @@ def install(home, framework, caveman_source=None):
         ledger[str(path)] = {'sha256': digest(data)}
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + '\n')
+    gemini_skills = home / '.gemini/config/skills'
+    if gemini_skills.exists() or (home / '.gemini').exists():
+        gemini_skills.mkdir(parents=True, exist_ok=True)
+        for folder in skills.iterdir():
+            if folder.is_dir() and (folder / 'SKILL.md').is_file():
+                link = gemini_skills / folder.name
+                if not link.exists() and not link.is_symlink():
+                    try:
+                        link.symlink_to(folder, target_is_directory=True)
+                    except OSError:
+                        pass
+        gemini_skills_json = home / '.gemini/config/skills.json'
+        old_data = json.loads(gemini_skills_json.read_text()) if gemini_skills_json.exists() else {'entries': []}
+        entries = old_data.setdefault('entries', [])
+        paths = [e.get('path') for e in entries if isinstance(e, dict)]
+        if str(skills) not in paths:
+            entries.append({'path': str(skills)})
+            gemini_skills_json.parent.mkdir(parents=True, exist_ok=True)
+            gemini_skills_json.write_text(json.dumps(old_data, indent=2, ensure_ascii=False) + '\n')
     print('Imported Caveman skills:', len(imported))
     print('Cloud workflows still require a real CLI/MCP connection and account; no service or credentials were configured.')
 

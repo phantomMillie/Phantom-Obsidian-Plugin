@@ -116,8 +116,13 @@ class ExternalSkillTests(unittest.TestCase):
             skill.mkdir(parents=True)
             (skill / 'SKILL.md').write_text('---\nname: caveman-explore\ndescription: fixture\ntools: Read, Glob\nmodel: haiku\n---\nFind code.\n')
             (skill / 'extra.md').write_text('preserved resource')
+            (home / '.gemini').mkdir(parents=True)
             compat.install(home, root, source)
             target = home / '.agents/skills/caveman-explore/SKILL.md'
+            gemini_target = home / '.gemini/config/skills/caveman-explore/SKILL.md'
+            self.assertTrue(gemini_target.exists())
+            gemini_skills_json = json.loads((home / '.gemini/config/skills.json').read_text())
+            self.assertTrue(any(pathlib.Path(e.get('path')).resolve() == (home / '.agents/skills').resolve() for e in gemini_skills_json.get('entries', [])))
             before = target.read_bytes()
             compat.install(home, root, source)
             self.assertEqual(before, target.read_bytes())

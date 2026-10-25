@@ -40,7 +40,7 @@
 
 | | |
 |---|---|
-| 🧠 **어디서든 같은 지침** | Claude Code · Codex · Gemini 등 이 PC 의 모든 에이전트가, 어느 작업 폴더에서든 같은 전역 지침과 스킬을 읽는다 |
+| 🧠 **어디서든 같은 지침** | Claude Code · Codex · Gemini / Antigravity 등 이 PC 의 모든 에이전트가, 어느 작업 폴더에서든 같은 전역 지침과 스킬을 읽는다 |
 | 🧱 **바탕화면 TODO** | 할 일이 블록이 되어 바탕화면에 떨어져 쌓인다. 끌고, 오른쪽 클릭으로 Claude 를 열어 바로 해결한다 |
 | 📝 **끝난 그 자리에서 기록** | 작업 · 마일스톤 · 결정을 끝낸 같은 턴에 vault 에 바로 쓴다 — 개발일지 한 줄, 마일스톤 체크, 할 일 |
 | 🗂️ **알아서 PARA 정리** | 프롬프트를 입력할 때 어느 프로젝트 일인지 정하고, 지난 대화에서 놓친 끝난 일은 **지금 쓰는 AI** 가 뒤에서 판정해 개발일지 · TODO · 이슈 · 영역 · 자료에 넣는다. API 키 없이, 묻지 않고 |
@@ -59,7 +59,7 @@ cd ~/.millie-obsidian
 
 이미 vault 가 있으면 `cp config.example.json config.json` → `"vault"` 를 그 경로로 → `./install.sh`.
 
-`install.sh` 한 번이면 끝난다 — 전역 지침 연결, 스킬 링크, Claude Code 플러그인 등록, Templater · Dataview 설치와 vault 등록, 바탕화면 TODO 빌드 · 자동 실행까지. 여러 번 돌려도 결과가 같고, `./install.sh --remove` 로 연결만 걷어낸다(레포 파일과 vault 는 남는다).
+`install.sh` 한 번이면 끝난다 — 전역 지침 연결, 스킬 링크(`~/.agents/skills` 및 Antigravity `~/.gemini/config/skills`), Claude Code 플러그인 등록, Templater · Dataview 설치와 vault 등록, 바탕화면 TODO 빌드 · 자동 실행까지. 여러 번 돌려도 결과가 같고, `./install.sh --remove` 로 연결만 걷어낸다(레포 파일과 vault 는 남는다).
 
 ## Codex 단독 설치 · 다른 컴퓨터에서 재사용
 

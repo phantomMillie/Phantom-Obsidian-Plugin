@@ -59,6 +59,7 @@ if [ "$REMOVE" = 1 ]; then
   python3 "$REPO/plugin/scripts/install_codex.py" --remove
 
   for s in "$REPO"/plugin/skills/*/; do l="$HOME/.agents/skills/$(basename "$s")"; [ -L "$l" ] && rm "$l" && echo "제거 $l"; done
+  for s in "$REPO"/plugin/skills/*/; do l="$HOME/.gemini/config/skills/$(basename "$s")"; [ -L "$l" ] && rm "$l" && echo "제거 (Antigravity) $l"; done
   [ -d "$HOME/.claude" ] && block "$HOME/.claude/CLAUDE.md" ""
   [ -d "$HOME/.gemini" ] && block "$HOME/.gemini/GEMINI.md" ""
   [ -d "$HOME/.codex"  ] && block "$HOME/.codex/AGENTS.md" ""
@@ -110,12 +111,31 @@ for s in "$REPO"/plugin/skills/*/; do
   if [ -e "$l" ] && [ ! -L "$l" ]; then echo "건너뜀 $l — 링크 아닌 파일이 이미 있음" >&2; continue; fi
   ln -sfn "${s%/}" "$l" && echo "링크 $l"
 done
+if want .gemini gemini; then
+  mkdir -p "$HOME/.gemini/config/skills"
+  for s in "$REPO"/plugin/skills/*/; do
+    l="$HOME/.gemini/config/skills/$(basename "$s")"
+    if [ -e "$l" ] && [ ! -L "$l" ]; then echo "건너뜀 $l — 링크 아닌 파일이 이미 있음" >&2; continue; fi
+    ln -sfn "${s%/}" "$l" && echo "링크 (Antigravity) $l"
+  done
+  python3 - "$HOME/.gemini/config/skills.json" "$HOME/.agents/skills" <<'EOF'
+import json, pathlib, sys
+cfg_path, agents_skills = pathlib.Path(sys.argv[1]), sys.argv[2]
+data = json.loads(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {"entries": []}
+entries = data.setdefault("entries", [])
+paths = [e.get("path") for e in entries if isinstance(e, dict)]
+if agents_skills not in paths:
+    entries.append({"path": agents_skills})
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+EOF
+fi
 
 # 3. 전역 지침 관리 블록
 IMPORT="$(mktemp)"; printf '@%s\n' "$REPO/MILLIE.md" > "$IMPORT"
 # 홈 폴더가 아직 없어도 CLI 가 깔려 있으면 만들어서 쓴다 — 처음 설치하는 PC 에서는
 # ~/.claude 같은 폴더가 그 도구를 한 번 돌린 뒤에야 생기기 때문.
-want() { [ -d "$HOME/$1" ] || command -v "$2" >/dev/null; }
+want() { [ -d "$HOME/$1" ] || command -v "$2" >/dev/null || ( [ "$1" = ".gemini" ] && command -v agy >/dev/null ); }
 want .claude claude && { mkdir -p "$HOME/.claude"; block "$HOME/.claude/CLAUDE.md" "$IMPORT"; }
 want .gemini gemini && { mkdir -p "$HOME/.gemini"; block "$HOME/.gemini/GEMINI.md" "$IMPORT"; }
 want .codex  codex  && { mkdir -p "$HOME/.codex";  block "$HOME/.codex/AGENTS.md" "$REPO/MILLIE.md"; }
