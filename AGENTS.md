@@ -51,10 +51,19 @@ cp config.example.json config.json      # "vault" 값을 기존 vault 절대 경
 
 ## 설치 후 남는 일
 
-**없다.** `install.sh` 가 Templater · Dataview 까지 받아서 켜고(`plugin/scripts/obsidian_setup.py`),
+Obsidian 쪽은 `install.sh` 가 Templater · Dataview 까지 받아서 켜고(`plugin/scripts/obsidian_setup.py`),
 Obsidian 의 vault 목록에도 등록한다. 사용자에게 손으로 플러그인을 깔라고 안내하지 마라.
 Obsidian 이 켜져 있었다면 껐다 켜야 vault 목록에 보인다는 것만 알려주면 된다.
 
 내려받기가 실패했을 때만(네트워크 없음 등) `python3 plugin/scripts/obsidian_setup.py <vault>` 를 다시 돌린다.
 
 나머지 구조 · 스킬 · 설정 키는 `README.md` 를 봐라.
+
+
+## Codex 단독 설치와 권한
+
+Claude Code나 macOS 바탕화면 앱 없이 Codex 연결만 필요하면, config.json의 기존 vault를 확인한 뒤 `python3 plugin/scripts/install_codex.py`를 실행한다. 이 경로는 vault 생성·데스크톱 앱 설치를 실행하지 않는다. 설치 후 Codex를 다시 시작하고 `/hooks`에서 새 훅을 사용자가 검토·신뢰해야 한다. 스킬 발견과 데이터 쓰기 권한은 별개다.
+
+선택적인 `--configure-codex-permissions`는 Python 3.11 이상에서 이 프레임워크와 설정된 vault 경로만 추가한다. 승인 정책·네트워크·모델을 바꾸거나 전체 접근을 켜지 않는다. 이름 있는 권한 프로필이나 읽기 전용 모드를 임의로 대체하지 않는다. 사용자가 이미 허락한 작업을 스킬 자체의 별도 승인이 필요한 일로 다시 해석하지 않는다.
+
+외부 스킬 호환 패치는 `plugin/scripts/install_skill_compat.py`를 사용한다. 기존 사용자 수정은 보존하고, Caveman Cloud 서비스·계정은 별도 의존성으로 보고한다. 로컬 config.json·vault·상태·API 키를 Git에 포함하지 않는다.

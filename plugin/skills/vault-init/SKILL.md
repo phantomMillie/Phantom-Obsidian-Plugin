@@ -13,7 +13,7 @@ description: 새 Millie vault(PARA 폴더 · AGENTS.md · 프로젝트 템플릿
    사용자가 먼저 다른 자리를 말하거나 이미 vault 가 있을 때만 그 경로를 쓴다(기존 파일은 안 덮는다).
 2. 만든다:
    ```bash
-   MILLIE_HOME="$HOME/.millie-obsidian" python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_init.py" "$HOME/.millie-obsidian/vault" --set-default
+   MILLIE_HOME="$HOME/.millie-obsidian" python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.millie-obsidian/plugin}/scripts/vault_init.py" "$HOME/.millie-obsidian/vault" --set-default
    ```
 3. PC 에 연결한다(전역 지침 · 스킬 링크):
    ```bash
@@ -21,7 +21,7 @@ description: 새 Millie vault(PARA 폴더 · AGENTS.md · 프로젝트 템플릿
    ```
 4. `install.sh` 가 Templater · Dataview 설치와 Obsidian vault 등록까지 한다. 손으로 깔라고 안내하지 않는다.
    Obsidian 이 켜져 있었다면 껐다 켜야 vault 목록에 보인다는 것만 알린다. 내려받기가 실패했을 때만
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/obsidian_setup.py" "<경로>"` 를 다시 돌린다.
+   `python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.millie-obsidian/plugin}/scripts/obsidian_setup.py" "<경로>"` 를 다시 돌린다.
 
 ## 규칙
 
@@ -29,4 +29,8 @@ description: 새 Millie vault(PARA 폴더 · AGENTS.md · 프로젝트 템플릿
 - `--update` 는 프레임워크 관리 파일(`.scripts/project_lint.py`, `.claude/commands/*`)만 새 버전으로 바꾼다 (`.bak` 백업).
   AGENTS.md · 템플릿 · 사용자 문서는 안 건드린다 — 바뀐 점은 차이만 보고한다.
 - 회사·개인 데이터는 골격에 없다. 사용자가 쓴 문서를 템플릿으로 되돌려 넣지 않는다.
-- 끝나면 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_lint.py" --vault "<경로>"` 로 점검이 도는지 확인하고, 결과(만든 수 / 건너뛴 수)를 한 줄로 보고한다.
+- 끝나면 `python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.millie-obsidian/plugin}/scripts/project_lint.py" --vault "<경로>"` 로 점검이 도는지 확인하고, 결과(만든 수 / 건너뛴 수)를 한 줄로 보고한다.
+
+## Codex 실행 조건
+
+스킬 발견과 파일 쓰기 권한은 별개다. 대상 vault와 프레임워크 홈에 현재 세션이 쓸 수 있는지 확인한다. 샌드박스가 거부하면 반복 실행하거나 chmod로 우회하지 않는다. 설치기의 Codex 권한 안내와 현재 호스트의 승인 절차를 확인하고, 준비 완료와 실제 반영 완료를 구분해 보고한다.

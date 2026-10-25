@@ -56,6 +56,8 @@ EOF
 }
 
 if [ "$REMOVE" = 1 ]; then
+  python3 "$REPO/plugin/scripts/install_codex.py" --remove
+
   for s in "$REPO"/plugin/skills/*/; do l="$HOME/.agents/skills/$(basename "$s")"; [ -L "$l" ] && rm "$l" && echo "제거 $l"; done
   [ -d "$HOME/.claude" ] && block "$HOME/.claude/CLAUDE.md" ""
   [ -d "$HOME/.gemini" ] && block "$HOME/.gemini/GEMINI.md" ""
@@ -118,6 +120,16 @@ want .claude claude && { mkdir -p "$HOME/.claude"; block "$HOME/.claude/CLAUDE.m
 want .gemini gemini && { mkdir -p "$HOME/.gemini"; block "$HOME/.gemini/GEMINI.md" "$IMPORT"; }
 want .codex  codex  && { mkdir -p "$HOME/.codex";  block "$HOME/.codex/AGENTS.md" "$REPO/MILLIE.md"; }
 rm -f "$IMPORT"
+
+# Codex-native hooks (read-only reminders; no Claude bootstrap on session start).
+if want .codex codex; then
+  CODEX_ARGS=()
+  case " $* " in *" --configure-codex-permissions "*) CODEX_ARGS+=(--configure-codex-permissions);; esac
+  python3 "$REPO/plugin/scripts/install_codex.py" "${CODEX_ARGS[@]}"
+fi
+case " $* " in
+  *" --with-skill-compat "*) python3 "$REPO/plugin/scripts/install_skill_compat.py" ;;
+esac
 
 # 4. Claude Code 플러그인 — Claude 는 plugin/ 을 ~/.claude/plugins/cache/ 로 복사해서 돌린다.
 #    그래서 스킬·훅을 고친 뒤에는 이 스크립트를 다시 돌려야 반영된다.

@@ -61,6 +61,38 @@ cd ~/.millie-obsidian
 
 `install.sh` 한 번이면 끝난다 — 전역 지침 연결, 스킬 링크, Claude Code 플러그인 등록, Templater · Dataview 설치와 vault 등록, 바탕화면 TODO 빌드 · 자동 실행까지. 여러 번 돌려도 결과가 같고, `./install.sh --remove` 로 연결만 걷어낸다(레포 파일과 vault 는 남는다).
 
+## Codex 단독 설치 · 다른 컴퓨터에서 재사용
+
+`install.sh`는 macOS 데스크톱 준비까지 수행한다. **Codex 연결만** 필요하면 macOS 앱·Claude Code 없이 Python 설치기를 쓴다(Python 3.9+). 기존 vault를 config.json에 지정한 뒤 실행한다.
+
+```bash
+python3 plugin/scripts/install_codex.py
+```
+
+이 설치기는 공용 `~/.agents/skills`, Codex 전역 지침과 JSON 훅을 연결한다. 심볼릭 링크를 만들 수 없는 환경은 인접 리소스를 포함한 스킬 복사로 대체하며, 기존의 다른 스킬·사용자 지침·훅은 덮어쓰지 않는다. 훅은 점검만 하고 앱 설치나 vault 수정을 하지 않는다. 설정 경로는 각 컴퓨터의 홈과 config.json에서 계산하므로 이 저장소에 개인 절대 경로나 vault 내용을 넣지 않는다.
+
+Codex를 다시 시작하고 `/hooks`에서 새 훅을 검토·신뢰해야 한다. **스킬이 보이는 것과 저장 경로에 쓰는 권한은 다르다.** 권한 예시는 `~/.local/share/millie/codex-permissions.toml`에 생성된다. 기존 workspace-write 설정에 프레임워크·vault 경로만 추가하려면 Python 3.11+에서 명시적으로 선택한다.
+
+```bash
+python3 plugin/scripts/install_codex.py --configure-codex-permissions
+```
+
+기존 모델·네트워크·승인 정책과 다른 쓰기 경로는 보존하고 config.toml을 백업한다. 이름 있는 권한 프로필·읽기 전용 모드는 덮어쓰지 않는다. 관리형/현재 세션 정책은 별도이며, 이 설치기가 전체 접근이나 훅 신뢰를 대신 승인하지 않는다. 바탕화면 TODO는 계속 macOS 전용이다. 다른 운영체제의 앱·셸·Codex 버전까지 무조건 동일하다고 보증하지 않는다.
+
+### 외부 스킬 호환 패치
+
+이미 설치된 [Matt Pocock 스킬](https://github.com/mattpocock/skills)의 Claude 전용 호출·지침 파일 선택을 보완하고, [Caveman](https://github.com/JuliusBrussee/caveman)의 스킬과 인접 리소스를 공용 경로로 가져올 수 있다. 외부 원본이나 Claude 캐시는 수정하지 않으며, 기존 사용자 수정은 보존한다.
+
+```bash
+python3 plugin/scripts/install_skill_compat.py
+```
+
+Claude 플러그인으로 Caveman이 설치돼 있으면 등록된 경로에서 찾는다. Codex만 쓰는 컴퓨터에서는 upstream 저장소를 별도로 받아 `--caveman-source`에 그 로컬 경로를 전달한다. 스킬 복사는 Cloud CLI·MCP·계정·게이트웨이를 설치하지 않는다. 해당 기능은 실제 의존성이 있을 때만 실행하며, 없는 통계나 절감액을 만들지 않는다. Codex 통계 어댑터는 정확한 스레드의 실제 토큰 카운터만 읽는다.
+
+기존 macOS 설치에는 `./install.sh --with-skill-compat`을 쓸 수 있다. 권한 설정까지 선택하려면 Python 3.11 이상이 `python3`인 환경에서 `--configure-codex-permissions`를 추가한다. 일반 Codex 연결만 해제할 때는 `python3 plugin/scripts/install_codex.py --remove`를 사용한다(vault·다른 훅은 유지).
+
+검증: `python3 -m unittest discover -s tests -q`. 새 홈·공백 경로·반복 설치·스킬 복사·기존 설정 보존·읽기 전용 훅·잘못된 세션 통계 방지를 테스트한다. 현재 검증 결과는 macOS에서 실행한 테스트이며 다른 운영체제의 실제 Codex 훅 실행까지 확인한 것은 아니다.
+
 ## 🧱 바탕화면 TODO
 
 `plugin/tools/todo-pile` — vault 의 최신 `07. TODO` 파일을 읽어, 할 일을 블록으로 바탕화면(폴더 아이콘 위, 앱 창 아래)에 떨어뜨린다. SpriteKit 물리로 기울고 구르며 쌓이고, 다 쌓이면 그리기를 멈춘다(CPU 0).
